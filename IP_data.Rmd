@@ -1,0 +1,135 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# demographics IP data
+
+```{r}
+# combine intersection of columns between 2 tables
+common_cols = intersect(colnames(demo_ip), colnames(demo_ip2))
+demo_ip_shortlisted = demo_ip %>% select(common_cols)
+demo_ip2_shortlisted = demo_ip2 %>% select(common_cols)
+demo_ip_combined = bind_rows(demo_ip_shortlisted, demo_ip2_shortlisted)
+
+colnames(demo_ip)
+colnames(demo_ip_combined)
+# first day of demo_ip_combined
+min(as.Date(demo_ip_combined$`Admission Date (yyyy-mm-dd)`))
+# last day of demo_ip_combined; up to 21st Mar 2022 only
+max(as.Date(demo_ip_combined$`Admission Date (yyyy-mm-dd)`))
+```
+
+# IP data
+
+```{r}
+df = left_join(ip, demo_ip_combined)
+colnames(df)
+# get only 16th Feb - 31st Mar 2022 data
+df = df %>% filter(as.Date(`Admission Date (yyyy-mm-dd)`) %in% seq(ymd('2022-02-16'),ymd('2022-03-21'),by='days'))
+# first day of data
+min(as.Date(df$`Admission Date (yyyy-mm-dd)`))
+# last day of data
+max(as.Date(df$`Admission Date (yyyy-mm-dd)`))
+```
+
+# age histogram; 
+
+```{r}
+ggplot(df,
+       aes(x = `Admission Age (Year) (episode based)`, fill = `Episode Death (Y/N)`)) + 
+  geom_histogram()
+colnames(df)
+```
+
+# comorbs
+
+```{r}
+diag_cols = 4:18
+df = df %>% mutate(
+  diabetes = ifelse(if_any(diag_cols, ~grepl("250", .)), 1, 0),
+  hypertension = ifelse(if_any(diag_cols, 
+                            ~between(., "401", "405")), 1, 0),
+  stroke = ifelse(if_any(diag_cols, 
+                      ~(grepl("362", .) |
+                        between(., "430", "435"))), 1, 0),
+  heart_failure = ifelse(if_any(diag_cols, ~grepl("428", .)), 1, 0),
+  # atrial fibrillation
+  atrial_fib = ifelse(if_any(diag_cols, ~grepl("427.31", .)), 1, 0),
+  parkinsons = ifelse(if_any(diag_cols, ~grepl("332.00", .)), 1, 0),
+  # schizophrenia
+  schizo = ifelse(if_any(diag_cols, ~grepl("295", .)), 1, 0),
+  # liver cirrhosis
+  liver = ifelse(if_any(diag_cols, 
+                     ~(grepl("571.5 | 517.2 | 546 | 567.89 | 789.59", .) |
+                     between(., "456", "456.21") |
+                     between(., "567", "567.21") |
+                     between(., "572.2", "572.49"))), 1, 0),
+  # depression
+  depression = ifelse(if_any(diag_cols, 
+                    ~( grepl("300.4 | 269.5", .) |
+                     between(., "269.2", "260.39") |
+                     between(., "309", "311"))), 1, 0),
+  # chronic kidney disease
+  ckd = ifelse(if_any(diag_cols, 
+                     ~(grepl("593.9 | 592", .) |
+                     between(., "583", "586.99"))), 1, 0),
+  # rheumatoid arthritis
+  arthritis = ifelse(if_any(diag_cols, 
+                         ~(grepl(., "446.5 |. 725") |
+                         between(., "714", "714.29") |
+                         between(., "714.8", "718.89")))
+                         , 1, 0),
+  # obesity
+  obesity =  ifelse(if_any(diag_cols, 
+                     ~between(., "277.70", "280.09")), 1, 0),
+  # alcohol abuse
+  alcohol_abuse = ifelse(if_any(diag_cols, 
+                             ~grepl("303 | 305", .)), 1, 0),
+  
+)
+# replace NA
+comorb_cols = 44:55
+df = df %>% 
+  mutate_at(comorb_cols, ~replace_na(., 0))
+
+```
+
+# drug use data join
+
+```{r}
+drug_use_shortlist = drug_use %>% 
+  select(`Reference Key`, `Prescription Start Date`, `Prescription End Date`, `Drug Name`) %>%
+  group_by(`Reference Key`, `Drug Name`) %>%
+  summarise(`Prescription Start Date` = first(`Prescription Start Date`),
+            `Drug Name` = first(`Drug Name`))
+df = df %>% left_join(drug_use_shortlist, by = "Reference Key")
+colnames(df)
+# remove code cols
+df = df %>% select(-(4:33))
+colnames(df)
+# generalise both antiviral
+df = df %>%
+  mutate(`Drug Name` = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), "MOLNUPIRAVIR", `Drug Name`),
+         `Drug Name` = ifelse(grepl("PAXLOVID", `Drug Name`), "PAXLOVID", `Drug Name`),
+         `Drug Name` = ifelse(is.na(`Drug Name`), "None", `Drug Name`))
+```
+
+# count data by drug use and comorbidity
+
+```{r}
+comorb_cols = 14:26
+count_df = c()
+# pivot long comorb cols
+df_long = df %>% 
+  pivot_longer(cols = comorb_cols, names_to = "comorb") %>%
+  filter(value == 1) %>% 
+  select(-value)
+df_long %>% 
+  count(`Drug Name`, comorb) %>% 
+  pivot_wider(names_from = "Drug Name", values_from = n) %>% 
+  mutate_at(2:4, ~replace_na(., 0))
+  
+
+```
+

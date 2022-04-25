@@ -1,0 +1,81 @@
+---
+title: "AE"
+output: html_notebook
+---
+
+# A&E data
+
+```{r}
+ae %>% head()
+ae_antiviral = ae %>% 
+  select(`Reference Key`, 
+         `Admission Age (Year) (episode based)`, Sex, 
+         `Attendance Date (yyyy-mm-dd)`, 
+         `Discharge Date (yyyy-mm-dd)`,
+         `Episode Death (Y/N)`) %>%
+  left_join(drug_use_shortlist, by = "Reference Key")
+# filter those who received antiviral only between attendance date and discharge date, 
+# or did not receive any antiviral
+ae_antiviral = ae_antiviral %>%
+  filter(`Prescription Start Date` >= `Attendance Date (yyyy-mm-dd)` &
+         `Prescription Start Date` <= `Discharge Date (yyyy-mm-dd)` |
+         is.na(`Prescription Start Date`))
+# assuming antiviral of any type == antiviral, and None for no antiviral
+ae_antiviral = ae_antiviral %>%
+  mutate(`Drug Name` = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), "MOLNUPIRAVIR", `Drug Name`),
+         `Drug Name` = ifelse(grepl("PAXLOVID", `Drug Name`), "PAXLOVID", `Drug Name`),
+         `Drug Name` = ifelse(is.na(`Drug Name`), "None", `Drug Name`)) 
+ae_antiviral = ae_antiviral %>%
+       filter(!is.na(`Admission Age (Year) (episode based)`))
+```
+
+# AE covid patients doa/dba analysis (may need to remove doadba)
+# finding 1: no date of registered death or exact date of death 
+# finding 2: there may be 34 doa/dba and 288 non-doa/dba
+# finding 3: deaths are generally older, min = 47, max = 104
+
+```{r}
+# no of doadba
+ae_antiviral %>%
+  filter(`Episode Death (Y/N)` == "Y") %>%
+  count(doadba = `Attendance Date (yyyy-mm-dd)` ==
+         `Discharge Date (yyyy-mm-dd)`)
+# age of death vs not-death
+ae_antiviral %>%
+  group_by(`Episode Death (Y/N)`) %>%
+  summarise(age_mean = mean(`Admission Age (Year) (episode based)`),
+            age_std = sd(`Admission Age (Year) (episode based)`))
+# find min/max age of death pop.
+ae_antiviral %>%
+  filter(`Episode Death (Y/N)` == "Y") %>%
+  pull(`Admission Age (Year) (episode based)`) %>%
+  max()
+
+```
+
+
+# AE covid patients with antiviral data, episode death
+
+```{r}
+ae_antiviral %>%
+  group_by(`Drug Name`) %>%
+  count(`Episode Death (Y/N)`)
+```
+
+# AE covid patients with antiviral data, sex
+
+```{r}
+ae_antiviral %>%
+  group_by(Sex) %>%
+  count(`Drug Name`)
+```
+
+
+```{r}
+ae_antiviral %>%
+  group_by(`Drug Name`) %>%
+  summarise(age_mean = mean(`Admission Age (Year) (episode based)`),
+            age_std = sd(`Admission Age (Year) (episode based)`))
+ggplot(filter(ae_antiviral, `Drug Name` == "None"), aes(x = `Admission Age (Year) (episode based)`, fill=`Drug Name`)) + 
+  geom_bar() + facet_wrap(~`Drug Name`, nrow=3)
+```
