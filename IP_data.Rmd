@@ -47,36 +47,36 @@ colnames(df)
 ```{r}
 diag_cols = 4:18
 df = df %>% mutate(
-  diabetes = ifelse(if_any(diag_cols, ~grepl("250", .)), 1, 0),
+  diabetes = ifelse(if_any(diag_cols, ~grepl("^250", .)), 1, 0),
   hypertension = ifelse(if_any(diag_cols, 
                             ~between(., "401", "405.99")), 1, 0),
   stroke = ifelse(if_any(diag_cols, 
                       ~(between(., "362.3", "362.49") |
                         between(., "430", "435.99"))), 1, 0),
-  heart_failure = ifelse(if_any(diag_cols, ~grepl("428", .)), 1, 0),
+  heart_failure = ifelse(if_any(diag_cols, ~grepl("^428", .)), 1, 0),
   # atrial fibrillation
-  atrial_fib = ifelse(if_any(diag_cols, ~grepl("427.31", .)), 1, 0),
-  parkinsons = ifelse(if_any(diag_cols, ~grepl("332.00", .)), 1, 0),
+  atrial_fib = ifelse(if_any(diag_cols, ~grepl("^427.31", .)), 1, 0),
+  parkinsons = ifelse(if_any(diag_cols, ~grepl("^332.00", .)), 1, 0),
   # schizophrenia
-  schizo = ifelse(if_any(diag_cols, ~grepl("295", .)), 1, 0),
+  schizo = ifelse(if_any(diag_cols, ~grepl("^295", .)), 1, 0),
   # liver cirrhosis
   liver = ifelse(if_any(diag_cols, 
-                     ~(grepl("571.5 | 517.2 | 546 | 567.89 | 789.59", .) |
+                     ~(grepl("^571.5|^517.2|^546|^567.89|^789.59", .) |
                      between(., "456", "456.21") |
                      between(., "567", "567.21") |
                      between(., "572.2", "572.49"))), 1, 0),
   # depression
   depression = ifelse(if_any(diag_cols, 
-                    ~( grepl("300.4 | 269.5", .) |
+                    ~( grepl("^300.4|^269.5", .) |
                      between(., "269.2", "260.39") |
                      between(., "309", "311"))), 1, 0),
   # chronic kidney disease
   ckd = ifelse(if_any(diag_cols, 
-                     ~(grepl("593.9 | 592", .) |
+                     ~(grepl("^593.9|^592", .) |
                      between(., "583", "586.99"))), 1, 0),
   # rheumatoid arthritis
   arthritis = ifelse(if_any(diag_cols, 
-                         ~(grepl(., "446.5 |. 725") |
+                         ~(grepl(., "^446.5|^725") |
                          between(., "714", "714.29") |
                          between(., "714.8", "718.89")))
                          , 1, 0),
@@ -85,7 +85,7 @@ df = df %>% mutate(
                      ~between(., "277.70", "280.09")), 1, 0),
   # alcohol abuse
   alcohol_abuse = ifelse(if_any(diag_cols, 
-                             ~grepl("303 | 305", .)), 1, 0),
+                             ~grepl("^303|^305", .)), 1, 0),
   
 )
 # replace NA
