@@ -49,10 +49,10 @@ diag_cols = 4:18
 df = df %>% mutate(
   diabetes = ifelse(if_any(diag_cols, ~grepl("250", .)), 1, 0),
   hypertension = ifelse(if_any(diag_cols, 
-                            ~between(., "401", "405")), 1, 0),
+                            ~between(., "401", "405.99")), 1, 0),
   stroke = ifelse(if_any(diag_cols, 
-                      ~(grepl("362", .) |
-                        between(., "430", "435"))), 1, 0),
+                      ~(between(., "362.3", "362.49") |
+                        between(., "430", "435.99"))), 1, 0),
   heart_failure = ifelse(if_any(diag_cols, ~grepl("428", .)), 1, 0),
   # atrial fibrillation
   atrial_fib = ifelse(if_any(diag_cols, ~grepl("427.31", .)), 1, 0),
@@ -104,11 +104,11 @@ drug_use_shortlist = drug_use %>%
   summarise(`Prescription Start Date` = first(`Prescription Start Date`),
             `Drug Name` = first(`Drug Name`))
 df = df %>% left_join(drug_use_shortlist, by = "Reference Key")
-colnames(df)
-# remove code cols
-df = df %>% select(-(4:33))
-colnames(df)
-# generalise both antiviral
+# colnames(df)
+# # remove code cols
+# df = df %>% select(-(4:33))
+# colnames(df)
+# ignore dosage info
 df = df %>%
   mutate(`Drug Name` = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), "MOLNUPIRAVIR", `Drug Name`),
          `Drug Name` = ifelse(grepl("PAXLOVID", `Drug Name`), "PAXLOVID", `Drug Name`),
@@ -118,7 +118,7 @@ df = df %>%
 # count data by drug use and comorbidity
 
 ```{r}
-comorb_cols = 14:26
+comorb_cols = 44:55
 count_df = c()
 # pivot long comorb cols
 df_long = df %>% 
