@@ -134,7 +134,8 @@ library(tableone)
 df_tab1 = df_ip %>%
   mutate(`Admission Age (Year) (episode based)` = as.numeric(`Admission Age (Year) (episode based)`),
          ) %>%
-  select(`HN Number`,
+  select(`Reference Key`,
+         `HN Number`,
          `Admission Age (Year) (episode based)`,
          Sex,
          # drug use
@@ -146,13 +147,19 @@ df_tab1 = df_tab1 %>%
   # deselect HN Number
   select(-`HN Number`)
 
+# aggregate binary columns by reference key
+df_tab1 = aggregate(df_tab1, by = list(df_tab1[, "Reference Key"]), FUN = "max") %>%
+  select(-Group.1, -`Reference Key`)
+
 df_tab1 = df_tab1 %>%
   mutate(across(2:length(colnames(df_tab1)), factor))
 
-smd_1 = CreateTableOne(data = df_tab1, strata = "paxlovid",  smd = T)
-smd_1
-smd_2 = CreateTableOne(data = df_tab1, strata = "molnupiravir",  smd = T)
-smd_2
+tab1 = CreateTableOne(data = df_tab1, strata = "paxlovid")
+tab1
+# smd_1 = CreateTableOne(data = df_tab1, strata = "paxlovid",  smd = T)
+# smd_1
+# smd_2 = CreateTableOne(data = df_tab1, strata = "molnupiravir",  smd = T)
+# smd_2
 ```
 
 
