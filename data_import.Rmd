@@ -23,7 +23,7 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
   filenames = filenames[grepl(match_by, filenames)]
   df = as.data.frame(c())
   for(name in filenames){
-    xlsx = readxl::read_xlsx(paste0(filepath, name))
+    xlsx = readxl::read_xlsx(paste0(filepath, name), col_types = "text")
     df = bind_rows(df, xlsx)
   }
   df
@@ -34,12 +34,16 @@ drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
 dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
 # COVID patients AE data
 ae = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_AE.xlsx")
-# COVID patients demographics IP data
-demo_ip = read_xlsx_from_folder("./data/5th Wave 202202/Dx/demographics/", "demographics_IP.xlsx")
-# only till 21st Mar
-demo_ip2 = read_xlsx_from_folder("./data/5th Wave 202202/", "_demo_IP.xlsx")
+
 # COVID patients IP data
-ip = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_IP.xlsx")
+options(warn = -1)
+ip2 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202202/Dx/", "_IP.xlsx")
+ip3 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202203/Dx/", "_IP.xlsx")
+ip = bind_rows(ip2, ip3)
+ip2 = ip3 = NULL
+# filter only wave 5, ie 16th feb - 31st mar
+ip = ip %>% 
+  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16")
 ```
 
 # get all covid patients age, sex, drug use (or lack thereof)
