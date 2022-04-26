@@ -35,8 +35,9 @@ dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
 # COVID patients AE data
 ae = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_AE.xlsx")
 
-# COVID patients IP data
+# COVID patients IP data, which contains sex, age, icd9 diagnosis, drug use, death and length of stay data
 options(warn = -1)
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5
 ip2 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202202/Dx/", "_IP.xlsx")
 ip3 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202203/Dx/", "_IP.xlsx")
 ip = bind_rows(ip2, ip3)
@@ -44,6 +45,10 @@ ip2 = ip3 = NULL
 # filter only wave 5, ie 16th feb - 31st mar
 ip = ip %>% 
   filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16")
+
+# COVID patients OP data
+op_drug = read_xlsx_from_folder("./data/Designated Clinic/drug/", ".xlsx")
+op = read_xlsx_from_folder("./data/Designated Clinic//", "_IP.xlsx")
 ```
 
 # get all covid patients age, sex, drug use (or lack thereof)
