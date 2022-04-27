@@ -8,6 +8,7 @@ output: html_notebook
 ```{r}
 library(survival)
 library(broom)
+# library("survminer")
 ```
 
 
@@ -171,16 +172,19 @@ medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "ma
   select(-Group.1)
 
 ip_tab1_df = ip_tab1_df %>%
-  left_join(medIOPdf, by = "Reference Key")
+  left_join(medIPdf_shortlist, by = "Reference Key")
 
-# # write excel by episodes data
-# writexl::write_xlsx(ip_tab1_df, path = "./toSunny.xlsx")
+# optional, IP data only
+ip_tab1_df = ip_tab1_df %>%
+  left_join(medIPdf_shortlist)
+
+# write excel by episodes data
+writexl::write_xlsx(ip_tab1_dfholder, path = "./ip_op_meds_reconciled_covid_admitted.xlsx")
 
 
 # as.factor cateogorical cols
 ip_tab1_dfholder = ip_tab1_df %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) 
-ip_tab1_dfholder = ip_tab1_dfholder %>%
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
   mutate(across(2:length(colnames(ip_tab1_dfholder)), factor))
 
 ip_tab1_p = CreateTableOne(data = ip_tab1_dfholder, strata = "paxlovid")
@@ -202,19 +206,21 @@ ip_death_los = df_ip %>%
          # length of stay LOS in days
          `Length of Stay`
          ) %>%
-  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Admission Date (yyyy-mm-dd)`) <= "2022-03-31") 
+  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Admission Date (yyyy-mm-dd)`) <= "2022-03-31")  %>% 
+  # left_join with table 1 data
+  # select(`HN Number`, `Length of Stay`, death28d, daystilldeath) %>%
+  left_join(ip_tab1_df, .)
 
 # impute 28d death
 ip_death_los = ip_death_los %>%
   mutate(death28d = ifelse(`Discharge Status`=="DEATH" & 
                              ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`) <= 28 &
                              !is.na(`Discharge Status`), 1, 0),
-         daystilldeath = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`))
-
-# left_join with table 1 data
-ip_death_los = ip_death_los %>% 
-  select(`HN Number`, `Length of Stay`, death28d, daystilldeath) %>%
-  left_join(ip_tab1_df, ., by = "HN Number")
+         daystilldeath = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
+         # right-censor
+         daystilldeath = ifelse(daystilldeath > 28, 28, daystilldeath),
+         # replace na with 0
+         daystilldeath = ifelse(is.na(daystilldeath), 0, daystilldeath))
 
 # select only sex, age, obesity, diabetes, paxlovid and molnupiravir
 ip_death_los = ip_death_los %>% 
@@ -249,11 +255,23 @@ for(i in 3:length(ip_death_los)){
                 data = ip_death_los)
   model = bind_rows(model, tidy(coxfit_paxlovid, exponentiate = T, conf.int = T, conf.level = .95))
 }
-
-```
-
-```{r}
 model
 ```
 
+# multivariate model
+
+```{r}
+coxfit_paxlovid <- coxph(formula = Surv(daystilldeath, death28d) ~ Sex+ over64+obesity+diabetes+paxlovid+molnupiravir, 
+                data = ip_death_los)
+tidy(coxfit_paxlovid, exponentiate = T, conf.int = T, conf.level = .95)
+plot(survfit(coxfit_paxlovid))
+```
+
+# LOS
+
+```{r}
+
+ggplot(ip_death_los, aes(x = as.numeric(`Length of Stay`), fill = as.factor(paxlovid))) +
+  geom_histogram()
+```
 
