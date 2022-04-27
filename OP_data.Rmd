@@ -3,7 +3,83 @@ title: "OP_data"
 output: html_notebook
 ---
 
+# import libraries
+
+```{r}
+library(tableone)
+```
+
+# check drug names (optional)
+
+```{r}
+unique(op_drug$`Drug Name`)[grepl("ASPIRIN", unique(op_drug$`Drug Name`))]
+```
+
+
+# OP drug use data
+
 ```{r}
 
+op_drug = op_drug %>%
+  rename(`Drug Name` = `Active Medication - Drug Name`)
+
+colnames(op_drug)
+
+medOPdf = op_drug %>%
+  select(`Reference Key`, `OP Number`, `Drug Name`, `Appointment Date (yyyy-mm-dd)`) %>%
+  impute_meds(.) %>%
+  distinct()
+
+# aggregate by OP Number, get 1 if possible
+medOPdf = aggregate(medOPdf, by = list(medOPdf[, "OP Number"]), FUN = "max") %>%
+  select(-Group.1)
+
+```
+
+
+# OP + OP drug data
+
+```{r}
+op_df = op %>%
+  left_join(medOPlist) %>%
+  mutate_at(c("paxlovid", "aspirin","ace_inhibitors","beta_blockers","calcium_channel_blockers", "statins","molnupiravir"), ~replace_na(., 0)) %>%
+  select(`Age On Appointment (Year)`, Sex, 
+         paxlovid, aspirin, ace_inhibitors, beta_blockers, calcium_channel_blockers, statins, molnupiravir) %>%
+  mutate(`Age On Appointment (Year)` = as.numeric(`Age On Appointment (Year)`)) %>%
+  mutate_at(2:length(colnames(op_df)),factor)
+```
+
+# descriptive status by visits
+
+```{r}
+
+op_tab1_p = CreateTableOne(data = op_df, strata = "paxlovid")
+op_tab1_p
+op_tab1_m = CreateTableOne(data = op_df, strata = "molnupiravir")
+op_tab1_m
+```
+
+# descriptive stats by patient
+
+```{r}
+op_patient = op %>%
+  left_join(medOPlist) %>%
+  mutate_at(c("paxlovid", "aspirin","ace_inhibitors","beta_blockers","calcium_channel_blockers", "statins","molnupiravir"), ~replace_na(., 0)) %>%
+  select(`Reference Key`, `Age On Appointment (Year)`, Sex, 
+         paxlovid, aspirin, ace_inhibitors, beta_blockers, calcium_channel_blockers, statins, molnupiravir)
+
+# aggregate by referene key
+op_patient = op_patient %>% 
+  mutate(`Age On Appointment (Year)` = as.numeric(`Age On Appointment (Year)`)) %>%
+  aggregate(op_patient, by = list(op_patient[, "Reference Key"]), FUN = "max") %>%
+  select(-Group.1, -`Reference Key`) 
+  
+op_patient = op_patient %>%
+  mutate_at(2:length(colnames(op_patient)), factor)
+
+op_tab1_patient_p = CreateTableOne(data = op_patient, strata = "paxlovid")
+op_tab1_patient_p
+op_tab1_patient_m = CreateTableOne(data = op_patient, strata = "molnupiravir")
+op_tab1_patient_m
 ```
 

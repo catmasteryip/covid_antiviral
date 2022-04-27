@@ -47,8 +47,15 @@ ip = ip %>%
   filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16")
 
 # COVID patients OP data
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/Designated Clinic
 op_drug = read_xlsx_from_folder("./data/Designated Clinic/drug/", ".xlsx")
-op = read_xlsx_from_folder("./data/Designated Clinic//", "_IP.xlsx")
+op_drug = op_drug %>%
+  filter(ymd(`Appointment Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Appointment Date (yyyy-mm-dd)`) <= "2022-03-31")
+  
+op = read_xlsx_from_folder("./data/Designated Clinic/no_frills/", ".xlsx")
+op = op %>%
+  filter(ymd(`Appointment Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Appointment Date (yyyy-mm-dd)`) <= "2022-03-31")
+
 ```
 
 # get all covid patients age, sex, drug use (or lack thereof)

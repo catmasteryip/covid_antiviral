@@ -3,6 +3,14 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+# import libraries
+
+```{r}
+library(survival)
+library(broom)
+```
+
+
 # 2022-04-26: episode death info is missing from hosp files; 
 # please refer to data_import.Rmd for IP data import 
 # check drug names (optional)
@@ -17,15 +25,6 @@ unique(ip$`Drug Name`)[grepl("ACETYL", unique(ip$`Drug Name`))]
 # specify icd9 code column index
 diag_cols = 35:49
 
-ip_drug_use = ip %>%
-  # exclude pregnancy
-  mutate(pregnancy = ifelse(if_any(diag_cols, ~between(., "630", "679.99")), T, F),
-         pregnancy = ifelse(is.na(pregnancy), F, pregnancy)) %>%
-  filter(!pregnancy) %>%
-  select(-pregnancy) %>% 
-  select(`HN Number`, `Drug Name`) 
-
-
 df_ip = ip %>%
   select(-`Drug Name`) %>%
   distinct() %>%
@@ -34,34 +33,31 @@ df_ip = ip %>%
          pregnancy = ifelse(is.na(pregnancy), F, pregnancy)) %>%
   filter(!pregnancy) %>%
   select(-pregnancy)
+```
 
-medHNlist = 
+# medication status
+
+```{r}
+ip_drug_use = ip %>%
+  # exclude pregnancy
+  mutate(pregnancy = ifelse(if_any(diag_cols, ~between(., "630", "679.99")), T, F),
+         pregnancy = ifelse(is.na(pregnancy), F, pregnancy)) %>%
+  filter(!pregnancy) %>%
+  select(-pregnancy) %>% 
+  select(`HN Number`, `Drug Name`) 
+
+medIPdf = 
   ip_drug_use %>%
-  # case-sensitive imputation of drug names
-  mutate(
-         # paxlovid
-         paxlovid = ifelse(grepl("PAXLOVID", `Drug Name`), 1, 0),
-         # aspirin
-         aspirin = ifelse(grepl("ASPIRIN|ACETYLSALICYLIC ACID", `Drug Name`), 1, 0),
-         # ACE inhibitors
-         ace_inhibitors = ifelse(grepl("BENAZEPRIL|CAPTOPRIL|CLIZAPRIL|ENALAPRIL|ENALAPRILAT|FOSINOPRIL|LISINOPRIL|MOEXIPRIL|PERINDOPRIL|QUINAPRIL|RAMIPRIL|TRANDOLAPRIL", `Drug Name`), 1, 0),
-         # beta blockers
-         beta_blockers = ifelse(grepl("ACEBUTALOL|ATENOLOL|BETAXOLOL|BISOPROLOL|CARTEOLOL|CARVEDILOL|ESMOLOL|LABETALOL|LEVOBUNOLOL|METOPROLOL|NADOLOL|NEBIVOLOL|PINDOLOL|PROPANOLOL|SOTALOL|TIMOLOL", `Drug Name`), 1, 0),
-         # calcium channel blockers
-         calcium_channel_blockers = ifelse(grepl("AMLODIPINE|CLEVIDIPINE|FELODIPINE|FLUNARZINE|ISRADIPINE|LEVAMLODIPINE|NICARDIPINE|NIFEDIPINE", `Drug Name`), 1, 0),
-         # statins
-         statins = ifelse(grepl("ATORVASTATIN|SIMVASTATIN|FLUVASTATIN|LOVASTATIN|PITAVASTATIN|PRAVASTATIN|ROSUVASTATIN", `Drug Name`), 1, 0),
-         # molnupiravir
-         molnupiravir = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), 1, 0)
-         ) %>%
+  impute_meds() %>%
   select(-`Drug Name`) %>%
   distinct()
 
 # aggregate by HN Number, get 1 if possible
-medHNlist = aggregate(medHNlist, by = list(medHNlist[, "HN Number"]), FUN = "max")
+medIPdf = aggregate(medIPdf, by = list(medIPdf[, "HN Number"]), FUN = "max") %>%
+  select(-Group.1)
 
-df_ip = df_ip %>% 
-  left_join(medHNlist, by = "HN Number")
+# df_ip = df_ip %>% 
+#   left_join(medIPdf, by = "HN Number")
 ```
 
 # comorbs
@@ -128,6 +124,17 @@ ip_diag = ip_diag %>%
 
 ```
 
+
+
+```{r}
+ip_first_by_patient_id = df_ip %>%
+  select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`) %>%
+  group_by(`Reference Key`) %>%
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup()
+```
+
+
 # table 1 SMD
 
 ```{r}
@@ -136,34 +143,50 @@ library(tableone)
 ip_tab1_df = df_ip %>%
   mutate(`Admission Age (Year) (episode based)` = as.numeric(`Admission Age (Year) (episode based)`),
          ) %>%
-  select(`Reference Key`,
-         `HN Number`,
-         `Admission Age (Year) (episode based)`,
-         Sex,
-         # drug use
-         paxlovid, aspirin, ace_inhibitors, beta_blockers, calcium_channel_blockers, statins, molnupiravir)
+  select(`Reference Key`, `HN Number`,`Admission Date (yyyy-mm-dd)`,
+         `Admission Age (Year) (episode based)`, Sex) %>%
+  filter(`HN Number` %in% ip_first_by_patient_id$`HN Number`) %>%
+  # left_join ip_diag to df_ip by HN Number
+  left_join(., ip_diag, by = "HN Number") 
 
-# left_join ip_diag to df_ip by HN Number
+# combine with OP meds status (incomplete)
+# 1. match by reference key &
+# 2. appointment date <= (first) admission date
+medOPdf_shortlist = ip_tab1_df %>%
+  select(`Reference Key`, `Admission Date (yyyy-mm-dd)`) %>%
+  left_join(medOPdf, by = "Reference Key") %>%
+  filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
+
+medIPdf_shortlist = ip_tab1_df %>%
+  select(`Reference Key`, `HN Number`) %>%
+  left_join(medIPdf, by = "HN Number")
+
+common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist))
+medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
+                     medIPdf_shortlist %>% select(common_cols))
+
+# aggregate medIOPdf
+medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
+  select(-Group.1)
+
 ip_tab1_df = ip_tab1_df %>%
-  left_join(., ip_diag, by = "HN Number") %>%
-  # deselect HN Number
-  select(-`HN Number`)
+  left_join(medIOPdf, by = "Reference Key")
 
-# write excel by episodes data
-writexl::write_xlsx(ip_tab1_df, path = "./toSunny.xlsx")
+# # write excel by episodes data
+# writexl::write_xlsx(ip_tab1_df, path = "./toSunny.xlsx")
 
-# # aggregate all columns by reference key, prioritise 1 for binary, max for age
-ip_tab1_df = aggregate(ip_tab1_df, by = list(ip_tab1_df[, "Reference Key"]), FUN = "max") %>%
-  select(-Group.1, -`Reference Key`)
 
 # as.factor cateogorical cols
-ip_tab1_df = ip_tab1_df %>%
-  mutate(across(2:length(colnames(ip_tab1_df)), factor))
+ip_tab1_dfholder = ip_tab1_df %>%
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) 
+ip_tab1_dfholder = ip_tab1_dfholder %>%
+  mutate(across(2:length(colnames(ip_tab1_dfholder)), factor))
 
-ip_tab1 = CreateTableOne(data = ip_tab1_df, strata = "paxlovid")
-ip_tab1
-ip_tab2 = CreateTableOne(data = ip_tab1_df, strata = "molnupiravir")
-ip_tab2
+ip_tab1_p = CreateTableOne(data = ip_tab1_dfholder, strata = "paxlovid")
+ip_tab1_p
+ip_tab1_m = CreateTableOne(data = ip_tab1_dfholder, strata = "molnupiravir")
+ip_tab1_m
 ```
 
 # 28d mortality and length of stay
@@ -174,8 +197,6 @@ ip_death_los = df_ip %>%
   select(
          # keys
          `Reference Key`, `HN Number`, 
-         # demographics
-         Sex, `Admission Age (Year) (episode based)`, 
          # death information, death if discharge status == death, discharge date becomes death date
          `Admission Date (yyyy-mm-dd)`, `Discharge Date (yyyy-mm-dd)`,  `Discharge Status`, 
          # length of stay LOS in days
@@ -189,37 +210,50 @@ ip_death_los = ip_death_los %>%
                              ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`) <= 28 &
                              !is.na(`Discharge Status`), 1, 0),
          daystilldeath = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`))
-# left_join with meds status df
-ip_death_los = ip_death_los %>% 
-  left_join(., medHNlist)
 
-# left_join with obesity and diabetes
+# left_join with table 1 data
 ip_death_los = ip_death_los %>% 
-  left_join(., select(ip_diag, `HN Number`, obesity, diabetes))
+  select(`HN Number`, `Length of Stay`, death28d, daystilldeath) %>%
+  left_join(ip_tab1_df, ., by = "HN Number")
 
-# optional 
+# select only sex, age, obesity, diabetes, paxlovid and molnupiravir
 ip_death_los = ip_death_los %>% 
-  select(-Group.1)
-
-# how many patients died
-aggregate(ip_death_los, by = list(ip_death_los[, "Reference Key"]), FUN = "max") %>% 
-  count(death28d, molnupiravir)
+  select(daystilldeath, death28d, Sex, `Admission Age (Year) (episode based)`, obesity, diabetes, paxlovid, molnupiravir)
 
 # impute 65+
 ip_death_los = ip_death_los %>%
-  mutate(over64 = ifelse(`Admission Age (Year) (episode based)` >= 65, 1 , 0))
-
-# hazard ratio
-library(survival)
-coxfit_paxlovid <- coxph(formula = Surv(daystilldeath, death28d) ~ paxlovid +Sex + over64 + obesity + diabetes + molnupiravir, 
-                data = ip_death_los)
-coxfit_paxlovid
+  mutate(over64 = ifelse(`Admission Age (Year) (episode based)` >= 65, 1 , 0)) %>%
+  select(-`Admission Age (Year) (episode based)`)
+```
 
 # table 2b descriptive 
+
+```{r}
+
 ip_2b = ip_death_los %>%
   select(over64, Sex, obesity, diabetes, paxlovid, molnupiravir) %>%
   mutate_all(factor)
 ip_tab2b = CreateTableOne(data = ip_2b, strata = c("paxlovid"))
 ip_tab2b
 ```
+
+# (univariate) hazard ratio per predictor
+
+```{r}
+model = as.data.frame(c())
+# iterate over cols
+for(i in 3:length(ip_death_los)){
+  x = colnames(ip_death_los)[i]
+  iformula <- as.formula(sprintf("Surv(daystilldeath, death28d) ~ %s", x))
+  coxfit_paxlovid <- coxph(formula = iformula, 
+                data = ip_death_los)
+  model = bind_rows(model, tidy(coxfit_paxlovid, exponentiate = T, conf.int = T, conf.level = .95))
+}
+
+```
+
+```{r}
+model
+```
+
 
