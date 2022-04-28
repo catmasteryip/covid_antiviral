@@ -4,5 +4,5 @@
 !IP_data.Rmd
 !.gitignore
 !OP_data.Rmd
-!scripts/*
+!scripts/
 .Rproj.user
