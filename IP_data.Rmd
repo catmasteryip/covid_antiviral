@@ -163,8 +163,27 @@ writexl::write_xlsx(ip_tab1_dfholder, path = "./ip_df.xlsx")
 ```{r}
 # as.factor cateogorical cols
 ip_tab1_dfholder = ip_tab1_df %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
-  mutate(across(2:length(colnames(ip_tab1_dfholder)), factor))
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) 
+ip_tab1_dfholder = ip_tab1_dfholder %>%
+  mutate(across(2:length(colnames(ip_tab1_dfholder)), factor)) %>%
+  # replace na of comorbs cols
+  mutate_at(3:length(colnames(ip_tab1_dfholder)), ~replace_na(., 0)) %>%
+  # remove NA in sex and age
+  drop_na() %>%
+  # impute age groups
+  mutate(
+    age = as.numeric(`Admission Age (Year) (episode based)`),
+    age_group = 1,
+    age_group = case_when( 
+      age < 65 ~ "under65",
+      (age >= 65 & age < 75) ~ "65-74",
+      age >= 75~"over74",
+      TRUE ~ as.character(age_group)
+    )) %>%
+  select(-`Admission Age (Year) (episode based)`)
+
+# check if there is any NA, missing data
+ip_tab1_dfholder %>% filter_all((any_vars(is.na(.))))  
 
 ip_tab1_p = CreateTableOne(data = ip_tab1_dfholder, strata = "paxlovid")
 ip_tab1_p
@@ -202,7 +221,7 @@ ip_death_los = ip_death_los %>%
          daystilldeath = ifelse(is.na(daystilldeath), 0, daystilldeath))
 ```
 
-# table 1 propensity and IPTW by ipw/weightit
+# propensity and IPTW by ipw/weightit
 
 ```{r}
 
@@ -215,7 +234,18 @@ ip_propensity = ip_tab1_df  %>%
   # replace comorbs and meds stats cols NA with 0
   mutate_at(3:length(colnames(.)), ~replace_na(., 0)) %>%
   # drop sex and age NA
-  drop_na()
+  drop_na() %>%
+  # impute age groups
+  mutate(
+    age = as.numeric(age),
+    age_group = 1,
+    age_group = case_when( 
+      age < 65 ~ "under65",
+      (age >= 65 & age < 75) ~ "65-74",
+      age >= 75~"over74",
+      TRUE ~ as.character(age_group)
+    )) %>%
+  select(-age)
 
 # check if there is any NA, missing data
 ip_propensity %>% filter_all((any_vars(is.na(.))))
@@ -238,44 +268,44 @@ function_call<-paste0("weight <- ipwpoint(
   
 # weightit 
 function_call<-paste0("weight <- weightit(paxlovid ~ ",paste(x_factors, collapse = "+"), 
-              "data = ip_propensity, method = \"ps\", 
-              estimand = \"ATE\")"
+              ", data = ip_propensity, method = \"ps\", 
+              estimand = \"ATT\")"
               )
 eval(parse(text = function_call))
 
-univariate_ps_anlysis =  NULL
-ps_anlysis = as.data.frame(c())
-# exclude age
-for(name in c("paxlovid", x_factors[x_factors != "age"])){
-  print(name)
-  clus <- svydesign(id =~ 1, weights = weight$weights.trunc, data = ip_propensity)
-  res <- svyglm(paste0("death28d ~", name), design = clus,family = binomial)
-  ps_holder = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
-  ps_anlysis = bind_rows(ps_anlysis, ps_holder)
-}
-ps_anlysis = ps_anlysis %>% filter(term != "(Intercept)")
-ps_anlysis
-writexl::write_xlsx(ps_anlysis, path = "./ps_analysis.xlsx")
-```
+# diagnostics of weighting
+library(cobalt)
+bal.tab(weight, un = T)
+summary(weight)
 
-```{r}
-# select only sex, age, obesity, diabetes, paxlovid and molnupiravir
-ip_death_los = ip_death_los %>% 
-  select(daystilldeath, death28d, Sex, `Admission Age (Year) (episode based)`, obesity, diabetes, paxlovid, molnupiravir)
 
-# impute 65+
-ip_death_los = ip_death_los %>%
-  mutate(over64 = ifelse(`Admission Age (Year) (episode based)` >= 65, 1 , 0)) %>%
-  select(-`Admission Age (Year) (episode based)`)
+# ps_anlysis = as.data.frame(c())
+# # exclude age
+# for(name in c("paxlovid", x_factors[x_factors != "age"])){
+#   print(name)
+#   
+# }
+clus <- svydesign(id =~ 1, weights = weight$weights, data = ip_propensity)
+res <- svyglm(death28d ~ paxlovid, design = clus,family = binomial)
+ps_holder = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
+ps_holder %>% filter(term != "(Intercept)")
+# ps_anlysis = bind_rows(ps_anlysis, ps_holder)
+
+# ps_anlysis = ps_anlysis %>% filter(term != "(Intercept)")
+# ps_anlysis
+writexl::write_xlsx(ps_anlysis, path = "./ps_analysis_ATT.xlsx")
 ```
 
 # table 2b descriptive 
 
 ```{r}
+# select only sex, age, obesity, diabetes, paxlovid and molnupiravir
+ip_2b = ip_death_los %>% 
+  select(daystilldeath, death28d, Sex, `Admission Age (Year) (episode based)`, obesity, diabetes, paxlovid, molnupiravir) %>%
+  # impute 65+
+  mutate(over64 = ifelse(`Admission Age (Year) (episode based)` >= 65, 1 , 0)) %>%
+  select(-`Admission Age (Year) (episode based)`)
 
-ip_2b = ip_death_los %>%
-  select(over64, Sex, obesity, diabetes, paxlovid, molnupiravir) %>%
-  mutate_all(factor)
 ip_tab2b = CreateTableOne(data = ip_2b, strata = c("paxlovid"))
 ip_tab2b
 ```
