@@ -91,7 +91,8 @@ ip_diag = left_join(ip_diag, charlson) %>%
 ip_diag = aggregate(x = ip_diag, 
           by = list(ip_diag$`HN Number`), 
           FUN = "max") %>%
-  select(-Group.1)
+  select(-Group.1) %>%
+  mutate_at(2:length(colnames(.)), ~replace_na(., 0))
 
 # deprecated code 
 # --------
@@ -250,22 +251,51 @@ ip_death_los = ip_death_los %>%
 # table 1 propensity and IPTW
 
 ```{r}
+
 # as.factor cateogorical cols and left_join ip_death_los data
 ip_propensity = ip_tab1_df  %>%
   mutate(across(2:length(colnames(ip_tab1_dfholder)), factor)) %>%
   left_join(select(ip_death_los, `HN Number`, death28d)) %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`)
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
+  rename(age = `Admission Age (Year) (episode based)`) %>%
+  # replace comorbs and meds stats cols NA with 0
+  mutate_at(3:length(colnames(.)), ~replace_na(., 0)) %>%
+  # drop sex and age NA
+  drop_na()
 
-for(name in colnames(ip_propensity)){
+# check if there is any NA, missing data
+ip_propensity %>% filter_all((any_vars(is.na(.))))
+
+# write to xlsx
+writexl::write_xlsx(ip_propensity, path = "./ps_analysis_df.xlsx")
+
+x_factors = colnames(ip_propensity)[! colnames(ip_propensity) %in% c("paxlovid", "death28d")]
+
+function_call<-paste0("weight <- ipwpoint(
+    exposure = paxlovid ,
+    family = \"binomial\",
+    link = \"logit\",
+    numerator =~ 1,
+    trunc = 0.01,
+    denominator =~ ",paste(x_factors, collapse = "+")," ,
+    data = ip_propensity
+  )")
   
+eval(parse(text = function_call))
+
+univariate_ps_anlysis =  NULL
+ps_anlysis = as.data.frame(c())
+# exclude age
+for(name in c("paxlovid", x_factors[x_factors != "age"])){
+  print(name)
+  clus <- svydesign(id =~ 1, weights = weight$weights.trunc, data = ip_propensity)
+  res <- svyglm(paste0("death28d ~", name), design = clus,family = binomial)
+  ps_holder = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
+  ps_anlysis = bind_rows(ps_anlysis, ps_holder)
 }
-weight <- ipwpoint(exposure = paxlovid, family = "binomial", link = "logit",
-  numerator =~ 1,
-  denominator =~ diabetes ,
-  trunc = 0.01, data = ip_propensity) 
-clus <- svydesign(id =~ 1, weights = weight$weights.trunc, data = ip_propensity)
-res <- svyglm(death28d ~ paxlovid, design = clus,family = binomial)
-tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
+ps_anlysis = ps_anlysis %>% filter(term != "(Intercept)")
+ps_anlysis
+writexl::write_xlsx(ps_anlysis, path = "./ps_analysis.xlsx")
 ```
 
 ```{r}
