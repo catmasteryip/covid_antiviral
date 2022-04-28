@@ -11,6 +11,7 @@ library(broom)
 library(ipw)
 library(survey)
 library(comorbidity)
+library(WeightIt)
 ```
 
 
@@ -38,7 +39,7 @@ df_ip = ip %>%
   select(-pregnancy)
 ```
 
-# medication status
+# medication status of IP epsiodes with IP data only
 
 ```{r}
 ip_drug_use = ip %>%
@@ -59,8 +60,6 @@ medIPdf =
 medIPdf = aggregate(medIPdf, by = list(medIPdf[, "HN Number"]), FUN = "max") %>%
   select(-Group.1)
 
-# df_ip = df_ip %>% 
-#   left_join(medIPdf, by = "HN Number")
 ```
 
 # comorbs, change to comorbidity package
@@ -80,6 +79,9 @@ ip_diag = ip_diag %>%
   ungroup() %>%
   mutate(id = 1:n())
 
+# write icd9 long format data to .xlsx
+writexl::write_xlsx(ip_diag, path = "./ip_icd9.xlsx")
+
 # comorbidity
 charlson = comorbidity::comorbidity(x = as.data.frame(ip_diag), 
                                    id = "id", 
@@ -94,63 +96,9 @@ ip_diag = aggregate(x = ip_diag,
   select(-Group.1) %>%
   mutate_at(2:length(colnames(.)), ~replace_na(., 0))
 
-# deprecated code 
-# --------
-# ip_diag = ip_diag %>%
-#   mutate(
-#   diabetes = ifelse(if_any(diag_cols, ~grepl("^250", .)), 1, 0),
-#   hypertension = ifelse(if_any(diag_cols, 
-#                             ~between(., "401", "405.99")), 1, 0),
-#   stroke = ifelse(if_any(diag_cols, 
-#                       ~(between(., "362.3", "362.49") |
-#                         between(., "430", "435.99"))), 1, 0),
-#   heart_failure = ifelse(if_any(diag_cols, ~grepl("^428", .)), 1, 0),
-#   # atrial fibrillation
-#   atrial_fib = ifelse(if_any(diag_cols, ~grepl("^427.31", .)), 1, 0),
-#   parkinsons = ifelse(if_any(diag_cols, ~grepl("^332.00", .)), 1, 0),
-#   # schizophrenia
-#   schizo = ifelse(if_any(diag_cols, ~grepl("^295", .)), 1, 0),
-#   # liver cirrhosis
-#   liver = ifelse(if_any(diag_cols, 
-#                      ~(grepl("^571.5|^517.2|^546|^567.89|^789.59", .) |
-#                      between(., "456", "456.21") |
-#                      between(., "567", "567.21") |
-#                      between(., "572.2", "572.49"))), 1, 0),
-#   # depression
-#   depression = ifelse(if_any(diag_cols, 
-#                     ~( grepl("^300.4|^269.5", .) |
-#                      between(., "269.2", "260.39") |
-#                      between(., "309", "311"))), 1, 0),
-#   # chronic kidney disease
-#   ckd = ifelse(if_any(diag_cols, 
-#                      ~(grepl("^593.9|^592", .) |
-#                      between(., "583", "586.99"))), 1, 0),
-#   # rheumatoid arthritis
-#   arthritis = ifelse(if_any(diag_cols, 
-#                          ~(grepl(., "^446.5|^725") |
-#                          between(., "714", "714.29") |
-#                          between(., "714.8", "718.89")))
-#                          , 1, 0),
-#   # obesity
-#   obesity =  ifelse(if_any(diag_cols, 
-#                      ~between(., "277.70", "280.09")), 1, 0),
-#   # alcohol abuse
-#   alcohol_abuse = ifelse(if_any(diag_cols, 
-#                              ~grepl("^303|^305", .)), 1, 0),
-#   
-# )
-# # # specify binary comorbity column index
-# # comorb_cols = 1:12 + max(diag_cols)
-# # replace NA as 0
-# ip_diag = ip_diag %>% 
-#   mutate_at(comorb_cols, ~replace_na(., 0))
-# # remove icd codes from df_diag
-# ip_diag = ip_diag %>%
-#   select(-diag_cols)
-# ----------
 ```
 
-
+# identification dataframe of IP patients' first admissions only
 
 ```{r}
 ip_first_by_patient_id = df_ip %>%
@@ -160,8 +108,7 @@ ip_first_by_patient_id = df_ip %>%
   ungroup()
 ```
 
-
-# table 1 SMD
+# IP data joins
 
 ```{r}
 # hhttps://cran.r-project.org/web/packages/tableone/vignettes/smd.html#:~:text=The%20standardized%20(mean)%20difference%20is,and%20after%20propensity%20score%20matching.
@@ -184,6 +131,7 @@ medOPdf_shortlist = ip_tab1_df %>%
   filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
   select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
 
+
 medIPdf_shortlist = ip_tab1_df %>%
   select(`Reference Key`, `HN Number`) %>%
   left_join(medIPdf, by = "HN Number")
@@ -192,21 +140,27 @@ common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist)
 medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
                      medIPdf_shortlist %>% select(common_cols))
 
-# aggregate medIOPdf
+# aggregate medIOPdf by reference key
 medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
-  select(-Group.1)
+  select(-Group.1) %>%
+  # as.factor binary cols
+  mutate_at(2:length(colnames(medIOPdf)), factor)
 
+# left join IOP meds status 
 ip_tab1_df = ip_tab1_df %>%
   left_join(medIOPdf, by = "Reference Key")
 
-# optional, IP data only
-ip_tab1_df = ip_tab1_df %>%
-  left_join(medIPdf_shortlist)
+# # optional, left join IP meds data only 
+# ip_tab1_df = ip_tab1_df %>%
+#   left_join(medIPdf_shortlist)
 
-# write excel by episodes data
-writexl::write_xlsx(ip_tab1_dfholder, path = "./ip_op_meds_reconciled_covid_admitted.xlsx")
+# write excel by patient data
+writexl::write_xlsx(ip_tab1_dfholder, path = "./ip_df.xlsx")
+```
 
+# table 1 descriptive/SMD
 
+```{r}
 # as.factor cateogorical cols
 ip_tab1_dfholder = ip_tab1_df %>%
   select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
@@ -248,13 +202,13 @@ ip_death_los = ip_death_los %>%
          daystilldeath = ifelse(is.na(daystilldeath), 0, daystilldeath))
 ```
 
-# table 1 propensity and IPTW
+# table 1 propensity and IPTW by ipw/weightit
 
 ```{r}
 
 # as.factor cateogorical cols and left_join ip_death_los data
 ip_propensity = ip_tab1_df  %>%
-  mutate(across(2:length(colnames(ip_tab1_dfholder)), factor)) %>%
+  mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
   left_join(select(ip_death_los, `HN Number`, death28d)) %>%
   select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
   rename(age = `Admission Age (Year) (episode based)`) %>%
@@ -271,6 +225,7 @@ writexl::write_xlsx(ip_propensity, path = "./ps_analysis_df.xlsx")
 
 x_factors = colnames(ip_propensity)[! colnames(ip_propensity) %in% c("paxlovid", "death28d")]
 
+# ipw
 function_call<-paste0("weight <- ipwpoint(
     exposure = paxlovid ,
     family = \"binomial\",
@@ -281,6 +236,11 @@ function_call<-paste0("weight <- ipwpoint(
     data = ip_propensity
   )")
   
+# weightit 
+function_call<-paste0("weight <- weightit(paxlovid ~ ",paste(x_factors, collapse = "+"), 
+              "data = ip_propensity, method = \"ps\", 
+              estimand = \"ATE\")"
+              )
 eval(parse(text = function_call))
 
 univariate_ps_anlysis =  NULL
