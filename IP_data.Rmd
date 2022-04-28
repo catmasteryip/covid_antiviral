@@ -39,6 +39,16 @@ df_ip = ip %>%
   select(-pregnancy)
 ```
 
+# identification dataframe of IP patients' first admissions only
+
+```{r}
+ip_first_by_patient_id = df_ip %>%
+  select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`) %>%
+  group_by(`Reference Key`) %>%
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup()
+```
+
 # medication status of IP epsiodes with IP data only
 
 ```{r}
@@ -60,6 +70,27 @@ medIPdf =
 medIPdf = aggregate(medIPdf, by = list(medIPdf[, "HN Number"]), FUN = "max") %>%
   select(-Group.1)
 
+# combine with OP meds status (incomplete)
+# 1. match by reference key &
+# 2. appointment date <= (first) admission date
+medOPdf_shortlist = medOPdf %>%
+  left_join(ip_first_by_patient_id, by = "Reference Key") %>%
+  filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
+
+
+medIPdf_shortlist = medIPdf %>%
+  left_join(ip_first_by_patient_id, by = "HN Number")
+
+common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist))
+medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
+                     medIPdf_shortlist %>% select(common_cols))
+
+# aggregate medIOPdf by reference key
+medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
+  select(-Group.1) %>%
+  # as.factor binary cols
+  mutate_at(2:length(colnames(medIOPdf)), factor)
 ```
 
 # comorbs, change to comorbidity package
@@ -98,15 +129,7 @@ ip_diag = aggregate(x = ip_diag,
 
 ```
 
-# identification dataframe of IP patients' first admissions only
 
-```{r}
-ip_first_by_patient_id = df_ip %>%
-  select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`) %>%
-  group_by(`Reference Key`) %>%
-  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
-  ungroup()
-```
 
 # IP data joins
 
@@ -120,34 +143,8 @@ ip_tab1_df = df_ip %>%
          `Admission Age (Year) (episode based)`, Sex) %>%
   filter(`HN Number` %in% ip_first_by_patient_id$`HN Number`) %>%
   # left_join ip_diag to df_ip by HN Number
-  left_join(., ip_diag, by = "HN Number") 
-
-# combine with OP meds status (incomplete)
-# 1. match by reference key &
-# 2. appointment date <= (first) admission date
-medOPdf_shortlist = ip_tab1_df %>%
-  select(`Reference Key`, `Admission Date (yyyy-mm-dd)`) %>%
-  left_join(medOPdf, by = "Reference Key") %>%
-  filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
-  select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
-
-
-medIPdf_shortlist = ip_tab1_df %>%
-  select(`Reference Key`, `HN Number`) %>%
-  left_join(medIPdf, by = "HN Number")
-
-common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist))
-medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
-                     medIPdf_shortlist %>% select(common_cols))
-
-# aggregate medIOPdf by reference key
-medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
-  select(-Group.1) %>%
-  # as.factor binary cols
-  mutate_at(2:length(colnames(medIOPdf)), factor)
-
-# left join IOP meds status 
-ip_tab1_df = ip_tab1_df %>%
+  left_join(ip_diag, by = "HN Number") %>%
+  # left join IOP meds status 
   left_join(medIOPdf, by = "Reference Key")
 
 # # optional, left join IP meds data only 
