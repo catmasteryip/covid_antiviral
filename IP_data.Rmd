@@ -295,29 +295,20 @@ colnames(ip_death_los)
 ```{r}
 # as.factor cateogorical cols and left_join ip_death_los data
 ip_propensity = ip_tab1_df  %>%
-  
+  select(-age) %>%
   # left-join death data
   left_join(select(ip_death_los, `HN Number`, death28d)) %>%
   # discard unclear death status, ie == -1
   filter(death28d != -1) %>%
   mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
-  # rename(age = `Admission Age (Year) (episode based)`) %>%
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) 
+ip_propensity = ip_propensity %>%
   # replace comorbs and meds stats cols NA with 0
-  mutate_at(diabetes:dexamethasone, ~replace_na(., 0)) %>%
-  # drop sex and age NA
-  drop_na() %>%
-  # impute age groups
-  mutate(
-    age = as.numeric(age),
-    age_group = 1,
-    age_group = case_when( 
-      age < 65 ~ "under65",
-      (age >= 65 & age < 75) ~ "65-74",
-      age >= 75~"over74",
-      TRUE ~ as.character(age_group)
-    )) %>%
-  select(-age)
+  mutate(across(diabetes:dexamethasone, ~replace_na(., 0))) 
+ip_propensity = ip_propensity%>%
+  # drop sex NA
+  drop_na() 
+  
 
 # check if there is any NA, missing data
 ip_propensity %>% filter_all((any_vars(is.na(.))))
@@ -328,7 +319,8 @@ writexl::write_xlsx(ip_propensity, path = "./ps_analysis_v4.xlsx")
 
 ```{r}
 x_factors = colnames(ip_propensity)[! colnames(ip_propensity) %in% c("paxlovid", "death28d")]
-  
+x_factors = x_factors[! x_factors %in% c("parkinsons")]
+# x_factors = c("age_group", "Sex", "obesity", "diabetes", "molnupiravir")
 # weightit 
 function_call<-paste0("weight <- weightit(paxlovid ~ ",paste(x_factors, collapse = "+"), 
               ", data = ip_propensity, method = \"ps\", 
@@ -362,48 +354,41 @@ print(ip_tab1_p_weighted, smd = T)
 
 ```{r}
 # select only sex, age, obesity, diabetes, paxlovid and molnupiravir
-ip_2b = ip_death_los %>% 
-  select(daystilldeath, death28d, Sex, `Admission Age (Year) (episode based)`, paxlovid, molnupiravir) %>%
-  # impute 65+
-  mutate(over64 = ifelse(`Admission Age (Year) (episode based)` >= 65, 1 , 0)) %>%
-  mutate(across(!daystilldeath, factor)) %>%
-  select(-`Admission Age (Year) (episode based)`)
+ip_2b = ip_tab1_df  %>%
+  select(`HN Number`, age_group, Sex, obesity, diabetes, molnupiravir, paxlovid) %>%
+  # left-join death data
+  left_join(select(ip_death_los, `HN Number`, death28d, daystilldeath)) %>%
+  # discard unclear death status, ie == -1
+  filter(death28d != -1) %>%
+  mutate(across(2:length(colnames(.)), factor)) %>%
+  select(-`HN Number`) 
 
-ip_tab2b = CreateTableOne(data = ip_2b, strata = c("paxlovid"), test = F)
+ip_tab2b = CreateTableOne(data = select(ip_2b, -daystilldeath), strata = c("paxlovid"), test = F)
 print(ip_tab2b, smd = T)
 ```
 
-# (univariate) hazard ratio per predictor
+# (univariate) hazard ratio per predictor (2b)
 
 ```{r}
 
-ip_hazard = ip_death_los %>%
-  select(4:30, 34:35) %>%
-  # impute age groups
-  mutate(
-    age = as.numeric(`Admission Age (Year) (episode based)`),
-    age_group = 1,
-    age_group = case_when( 
-      age < 65 ~ "under65",
-      (age >= 65 & age < 75) ~ "65-74",
-      age >= 75~"over74",
-      TRUE ~ as.character(age_group)
-    )) %>%
-  select(-age, -`Admission Age (Year) (episode based)`)
+ip_hazard = ip_2b 
 
 ip_hazard %>% filter_all(any_vars(is.na(.)))
 
+ip_hazard = ip_hazard %>%
+  mutate(daystilldeath = as.numeric(daystilldeath))
 
 model = as.data.frame(c())
+x_factors = colnames(ip_hazard)[!colnames(ip_hazard) %in% c("death28d", "daystilldeath", "paxlovid", "age_group")]
 # iterate over cols
-for(x in colnames(ip_hazard)){
+for(x in x_factors){
   
-  iformula <- as.formula(sprintf("Surv(daystilldeath, death28d) ~ %s", x))
+  iformula <- as.formula(sprintf("Surv(as.numeric(daystilldeath), as.numeric(death28d)) ~ %s", x))
   coxfit_paxlovid <- coxph(formula = iformula, 
                 data = ip_hazard)
   model = bind_rows(model, tidy(coxfit_paxlovid, exponentiate = T, conf.int = T, conf.level = .95))
 }
-model %>% filter(p.value <= 0.05, conf.low > 1)
+model 
 ```
 
 # multivariate model
