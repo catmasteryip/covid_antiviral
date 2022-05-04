@@ -105,3 +105,48 @@ impute_comorbs = function(df, diag_cols){
   df
 }
 # -------------
+
+# to be used to replace IP_data repeated calculation of HR
+calculate_hr = function(df, 
+                        covariates = c("HN Number",'age_group', 'Sex', 'obesity', 'diabetes', 'molnupiravir', 'paxlovid'),
+                        eventdata){
+  
+  #' a helper function for univariate hazard ratio calculation and descriptive statistics table generation
+  #'
+  #' @param df Dataframe. A dataframe that contains the covariates
+  #' @param covariates. [string]. vector of strings of col names that are covariates
+  #' @param eventdata Dataframe. A dataframe that contains HN Number, event and time to event 
+  #' with exactly mentioned column names
+  #' @return (dataframe, dataframe). A list of hazard ratio results and table of descriptive stats
+  #' 
+  ip_icu = df %>%
+    select(`HN Number`) %>%
+    left_join(select(ip_tab1_df, covariates)) %>%
+    # left-join eventdata
+    left_join(eventdata) %>%
+    select(-`HN Number`)
+  ip_icu = ip_icu %>%
+    # replace timetoevent NA, impute event, right-censor, factorise
+    mutate(event = ifelse(is.na(event), 0, event),
+           timetoevent = ifelse(is.na(timetoevent), 28, timetoevent),
+           across(age_group:event, factor),
+           age_group = ifelse(age_group != "under65", "65plus", age_group))
+  
+  # ip_icu %>% filter_all(any_vars(is.na(.)))
+  
+  # nrow(ip_icu)
+  icu_hr = as.data.frame(c())
+  x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c('event', 'timttoevent')]
+  # iterate over cols
+  for(x in x_factors){
+    
+    iformula <- as.formula(sprintf("Surv(as.numeric(timetoevent), as.numeric(event)) ~ %s", x))
+    coxfit_dexa <- coxph(formula = iformula, 
+                         data = ip_icu)
+    icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95))
+  }
+  icu_hr 
+  ip_tab_icu = CreateTableOne(data = select(ip_icu, -daystillicu), strata = c("icu"), test = F)
+  print(ip_tab_icu, smd = T)
+  list(icu_hr, ip_tab_icu)
+}

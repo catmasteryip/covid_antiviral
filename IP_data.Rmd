@@ -441,7 +441,7 @@ ip_icu = ip_tab1_df  %>%
 ip_icu = ip_icu %>%
   # replace daystillicu NA, impute icu, factorise
   mutate(icu = ifelse(is.na(icu), 0, icu),
-         daystillicu = ifelse(is.na(daystillicu), 0, daystillicu),
+         daystillicu = ifelse(is.na(daystillicu), 28, daystillicu),
          across(age_group:icu, factor),
          age_group = ifelse(age_group != "under65", "65plus", age_group))
   
