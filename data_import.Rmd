@@ -60,6 +60,8 @@ op = read_xlsx_from_folder("./data/Designated Clinic/no_frills/", ".xlsx")
 op = op %>%
   filter(ymd(`Appointment Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Appointment Date (yyyy-mm-dd)`) <= "2022-03-31")
 
+# demo IP data
+demo_ip = read_xlsx_from_folder("./data/5th Wave 202202/", "_demo_IP.xlsx")
 ```
 
 # look for antiviral data

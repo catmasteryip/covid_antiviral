@@ -276,16 +276,17 @@ ip_death_los = ip_death_los %>%
     `Discharge Status`=="DEATH" & 
       ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`) <= 28 &
       !is.na(`Discharge Status`)~1, 
-      # unknown discharge status, unknown death28d status
-      is.na(`Discharge Status`)~-1,
+      # unknown discharge status, unknown death28d status -> survival
+      is.na(`Discharge Status`)~0,
       TRUE~0
     ),
      daystilldeath = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
      # right-censor
-     daystilldeath = ifelse(daystilldeath > 28, 28, daystilldeath),
-     # replace na with 0
-     daystilldeath = ifelse(is.na(daystilldeath), 0, daystilldeath))
-colnames(ip_death_los)
+     daystilldeath = ifelse(daystilldeath > 28 & death28d == 0, 28, daystilldeath),
+     death28d = ifelse(daystilldeath > 28 & death28d == 1, 0, death28d), 
+     # replace na with 28
+     daystilldeath = ifelse(is.na(daystilldeath), 28, daystilldeath))
+# colnames(ip_death_los)
 ```
 
 # propensity and IPTW by ipw/weightit
@@ -296,13 +297,11 @@ ip_propensity = ip_tab1_df  %>%
   select(-age) %>%
   # left-join death data
   left_join(select(ip_death_los, `HN Number`, death28d)) %>%
-  # discard unclear death status, ie == -1
-  filter(death28d != -1) %>%
   mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
   select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) 
 ip_propensity = ip_propensity %>%
-  # replace comorbs and meds stats cols NA with 0
-  mutate(across(diabetes:dexamethasone, ~replace_na(., 0))) 
+  # replace comorbs, meds stats and death28d cols NA with 0
+  mutate(across(c(diabetes:dexamethasone, death28d), ~replace_na(., 0))) 
 ip_propensity = ip_propensity%>%
   # drop sex NA
   drop_na() 
@@ -364,8 +363,6 @@ ip_2b = ip_tab1_df  %>%
   mutate(age_group = ifelse(age_group != "under65", "65plus", age_group)) %>%
   # left-join death data
   left_join(select(ip_death_los, `HN Number`, death28d, daystilldeath)) %>%
-  # discard unclear death status, ie == -1
-  filter(death28d != -1) %>%
   mutate(across(2:length(colnames(.)), factor)) %>%
   select(-`HN Number`) 
 
@@ -384,7 +381,7 @@ ip_hazard %>% filter_all(any_vars(is.na(.)))
 
 ip_hazard = ip_hazard %>%
   mutate(daystilldeath = as.numeric(daystilldeath))
-
+nrow(ip_hazard)
 model = as.data.frame(c())
 x_factors = colnames(ip_hazard)[!colnames(ip_hazard) %in% c("death28d", "daystilldeath")]
 # iterate over cols
@@ -403,19 +400,20 @@ model
 ```{r}
 ip_dexa = ip_tab1_df  %>%
   select(`HN Number`) %>%
+  
+  left_join(select(ip_tab1_df, `HN Number`,age_group, Sex, obesity, diabetes, molnupiravir, paxlovid)) %>%
   # left-join dexamethasone data
   left_join(dexamethasone_shortlist) %>%
-  left_join(select(ip_tab1_df, `HN Number`,age_group, Sex, obesity, diabetes, molnupiravir, paxlovid)) %>%
   select(-`HN Number`)
 ip_dexa = ip_dexa %>%
   # replace daystilldexa NA, impute dexamethasone, factorise
   mutate(dexamethasone = ifelse(!is.na(daystilldexa), 1, 0),
-         daystilldexa = ifelse(is.na(daystilldexa), 0, daystilldexa),
+         daystilldexa = ifelse(is.na(daystilldexa), 28, daystilldexa),
          across(age_group:dexamethasone, factor),
          age_group = ifelse(age_group != "under65", "65plus", age_group))
   
 ip_dexa %>% filter_all(any_vars(is.na(.)))
-
+nrow(ip_dexa)
 dexa_hr = as.data.frame(c())
 x_factors = colnames(ip_dexa)[!colnames(ip_dexa) %in% c("daystilldexa", "dexamethasone")]
 # iterate over cols
@@ -431,4 +429,37 @@ ip_tab3 = CreateTableOne(data = select(ip_dexa, -daystilldexa), strata = c("dexa
 print(ip_tab3, smd = T)
 ```
 
+# ICU HR
+
+```{r}
+ip_icu = ip_tab1_df  %>%
+  select(`HN Number`) %>%
+  left_join(select(ip_tab1_df, `HN Number`,age_group, Sex, obesity, diabetes, molnupiravir, paxlovid)) %>%
+  # left-join icu data
+  left_join(icu) %>%
+  select(-`HN Number`)
+ip_icu = ip_icu %>%
+  # replace daystillicu NA, impute icu, factorise
+  mutate(icu = ifelse(is.na(icu), 0, icu),
+         daystillicu = ifelse(is.na(daystillicu), 0, daystillicu),
+         across(age_group:icu, factor),
+         age_group = ifelse(age_group != "under65", "65plus", age_group))
+  
+ip_icu %>% filter_all(any_vars(is.na(.)))
+
+# nrow(ip_icu)
+icu_hr = as.data.frame(c())
+x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c("daystillicu", "icu")]
+# iterate over cols
+for(x in x_factors){
+  
+  iformula <- as.formula(sprintf("Surv(as.numeric(daystillicu), as.numeric(icu)) ~ %s", x))
+  coxfit_dexa <- coxph(formula = iformula, 
+                data = ip_icu)
+  icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95))
+}
+icu_hr 
+ip_tab_icu = CreateTableOne(data = select(ip_icu, -daystillicu), strata = c("icu"), test = F)
+print(ip_tab_icu, smd = T)
+```
 
