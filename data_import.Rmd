@@ -28,8 +28,12 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
   }
   df
 }
-# antiviral use 
-drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
+# # antiviral use 
+# drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
+# steroid administration route data
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid
+steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
+
 # reference key data
 dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
 # COVID patients AE data
@@ -57,6 +61,15 @@ op = op %>%
   filter(ymd(`Appointment Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Appointment Date (yyyy-mm-dd)`) <= "2022-03-31")
 
 ```
+
+# look for antiviral data
+
+```{r}
+drug_use$`Drug Item Code`
+unique(drug_use$`Drug Name`)
+unique(drug_use$`Drug Name`)[grepl("DEXAMETHASONE", unique(drug_use$`Drug Name`))]
+```
+
 
 # get all covid patients age, sex, drug use (or lack thereof)
 

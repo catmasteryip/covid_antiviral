@@ -12,7 +12,8 @@ library(tableone)
 # check drug names (optional)
 
 ```{r}
-unique(op_drug$`Drug Name`)[grepl("ASPIRIN", unique(op_drug$`Drug Name`))]
+unique(op_drug$`Drug Name`)[grepl("DEXAMETHASONE", unique(op_drug$`Drug Name`))]
+op_drug %>% filter(grepl("DEXAMETHASONE", `Drug Name`))
 ```
 
 
@@ -37,7 +38,7 @@ medOPdf = aggregate(medOPdf, by = list(medOPdf[, "OP Number"]), FUN = "max") %>%
 ```
 
 
-# OP + OP drug data
+# OP non-drug data
 
 ```{r}
 op_df = op %>%

@@ -21,13 +21,29 @@ impute_meds = function(df){
       # statins
       statins = ifelse(grepl("ATORVASTATIN|SIMVASTATIN|FLUVASTATIN|LOVASTATIN|PITAVASTATIN|PRAVASTATIN|ROSUVASTATIN", `Drug Name`), 1, 0),
       # molnupiravir
-      molnupiravir = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), 1, 0)
+      molnupiravir = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), 1, 0),
+      
     ) %>% 
     mutate_at(c("paxlovid", "aspirin","ace_inhibitors","beta_blockers","calcium_channel_blockers", "statins","molnupiravir"), ~replace_na(., 0))
   return(df)
 }
+# severe covid related meds
+impute_meds_severe_covid = function(df){
+  #' impute medication status in binary 
+  #'
+  #' @param df Dataframe. A dataframe that contains the Drug Name column from raw data
+  #' @return Dataframe that mutated new cols of binary meds status
+  df = df %>%
+    # case-sensitive imputation of drug names
+    mutate(
+      # baricitinib 
+      baricitinib = ifelse(grepl("BARICITINIB", `Drug Name`), 1, 0)
+    ) %>% 
+    mutate_at(c("baricitinib"), ~replace_na(., 0))
+  return(df)
+}
 
-# deprecated code 
+
 # --------
 impute_comorbs = function(df, diag_cols){
   #' impute comorbidities status in binary 
