@@ -392,36 +392,38 @@ print(ip_tab2b, smd = T)
 # death28d HR (2b)
 
 ```{r}
-
-ip_hazard = ip_2b 
-  
-
-ip_hazard %>% filter_all(any_vars(is.na(.)))
-
-ip_hazard = ip_hazard %>%
-  mutate(daystilldeath = as.numeric(daystilldeath))
-nrow(ip_hazard)
-model = as.data.frame(c())
-x_factors = colnames(ip_hazard)[!colnames(ip_hazard) %in% c("death28d", "daystilldeath")]
-# iterate over cols
-for(x in x_factors){
-  
-  iformula <- as.formula(sprintf("Surv(as.numeric(daystilldeath), as.numeric(death28d)) ~ %s", x))
-  coxfit_paxlovid <- coxph(formula = iformula, 
-                data = ip_hazard)
-  model = bind_rows(model, tidy(coxfit_paxlovid, exponentiate = T, conf.int = T, conf.level = .95))
-}
-model 
+death_shortlist = ip_death_los %>%
+  select(`HN Number`, `death28d`, `daystilldeath`) %>%
+  rename(timetoevent = daystilldeath,
+         event = death28d)
+results_death = calculate_hr(df = ip_tab1_df,
+             eventdata = death_shortlist)
+results_death
 ```
 
-# dexamethasone HR (3)
+# COVID antiviral HR (3)
 
 ```{r}
+# dexamethasone
 dexamethasone_shortlist = dexamethasone_shortlist %>%
   rename(timetoevent = daystilldexa)
 results_dexa = calculate_hr(df = ip_tab1_df,
              eventdata = dexamethasone_shortlist)
 results_dexa
+
+# baricitinib
+baricitinib_shortlist = baricitinib_shortlist %>%
+  rename(timetoevent = daystillbari)
+results_bari = calculate_hr(df = ip_tab1_df,
+             eventdata = baricitinib_shortlist)
+results_bari
+
+# dexamethasone or baricitinib
+dexabari_shortlist = bind_rows(dexamethasone_shortlist,baricitinib_shortlist)
+dexabari_shortlist = aggregate(.~`HN Number`, dexabari_shortlist, min)
+results_dexabari = calculate_hr(df = ip_tab1_df,
+             eventdata = dexabari_shortlist)
+results_dexabari
 ```
 
 # ICU HR
@@ -434,13 +436,20 @@ results_icu = calculate_hr(df = ip_tab1_df,
 results_icu
 ```
 
-
-# baricitinib HR
+# IPTW HR 
 
 ```{r}
-baricitinib_shortlist = baricitinib_shortlist %>%
-  rename(timetoevent = daystillbari)
-results_bari = calculate_hr(df = ip_tab1_df,
-             eventdata = baricitinib_shortlist)
-results_bari
+# dexamethasone
+dexamethasone_shortlist = dexamethasone_shortlist %>%
+  rename(timetoevent = daystilldexa)
+weighted_results_dexa = calculate_hr(df = ip_tab1_df,
+                                     eventdata = dexamethasone_shortlist,
+                                     weights = weight$weights)
+weighted_results_dexa
+# death28d
+weighted_results_death = calculate_hr(df = ip_tab1_df,
+                                     eventdata = death_shortlist,
+                                     weights = weight$weights)
+weighted_results_death
 ```
+

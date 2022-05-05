@@ -109,7 +109,8 @@ impute_comorbs = function(df, diag_cols){
 # to be used to replace IP_data repeated calculation of HR
 calculate_hr = function(df, 
                         covariates = c("HN Number",'age_group', 'Sex', 'obesity', 'diabetes', 'molnupiravir', 'paxlovid'),
-                        eventdata){
+                        eventdata,
+                        weights = NULL){
   
   #' a helper function for univariate hazard ratio calculation and descriptive statistics table generation
   #'
@@ -121,33 +122,60 @@ calculate_hr = function(df,
   #' 
   ip_icu = df %>%
     select(`HN Number`) %>%
-    left_join(select(ip_tab1_df, covariates)) %>%
+    left_join(select(df, covariates)) %>%
     # left-join eventdata
     left_join(eventdata) %>%
     select(-`HN Number`)
+  if("event" %in% colnames(eventdata)){
+    # if there is event col
+    ip_icu = ip_icu %>%
+      # impute event, if NA, event is 0
+      mutate(event = ifelse(is.na(event), 0, event))
+  }else{
+    # if there isnt event col
+    ip_icu = ip_icu %>%
+      # impute event, if timetoevent NA, event is 0
+      mutate(event = ifelse(!is.na(timetoevent), 1, 0))
+  }
   ip_icu = ip_icu %>%
-    # replace timetoevent NA, impute event, right-censor, factorise
-    mutate(event = ifelse(is.na(timetoevent), 0, 1),
-           timetoevent = as.numeric(timetoevent),
+    # replace timetoevent NA, factorise
+    mutate(timetoevent = as.numeric(timetoevent),
            timetoevent = ifelse(is.na(timetoevent), 28, timetoevent),
            across(age_group:event, factor),
-           age_group = ifelse(age_group != "under65", "65plus", age_group))
+           age_group = ifelse(age_group != "under65", "1", "0"),
+           Sex = ifelse(Sex == "M", "1", "0")) %>%
+    rename(plus65 = age_group,
+           SexM = Sex)
   
   # ip_icu %>% filter_all(any_vars(is.na(.)))
   
   # nrow(ip_icu)
   icu_hr = as.data.frame(c())
-  x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c('event', 'timetoevent')]
+  # obesity is excluded due to non-convergence
+  x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c('event', 'timetoevent', 'obesity', 'molnupiravir', 'paxlovid')]
   # iterate over cols
   for(x in x_factors){
+    if(!is.null(weights)){
+      # susbet weights
+      df_hr = filter(ip_icu, eval(parse(text = paste0(x, "==1")))) %>% 
+        mutate(id = 1:n()) %>% 
+        select(-x) 
+      coxfit_dexa <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = df_hr,
+                           weights = weights[df_hr$id])
+    }else{
+      coxfit_dexa <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = filter(ip_icu, eval(parse(text = paste0(x, "==1")))) %>% 
+                             select(-x))
+    }
+    # iformula <- as.formula(sprintf("Surv(as.numeric(timetoevent), as.numeric(event)) ~ %s", x))
     
-    iformula <- as.formula(sprintf("Surv(as.numeric(timetoevent), as.numeric(event)) ~ %s", x))
-    coxfit_dexa <- coxph(formula = iformula, 
-                         data = ip_icu)
-    icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95))
+    icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95) %>%
+                         mutate(xfactor = x))
   }
   icu_hr 
   ip_tab_icu = CreateTableOne(data = select(ip_icu, -timetoevent), strata = c("event"), test = F)
   print(ip_tab_icu, smd = T)
   list(icu_hr, ip_tab_icu)
 }
+

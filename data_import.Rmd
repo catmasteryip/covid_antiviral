@@ -38,6 +38,7 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid
 steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
 # baricitinib 
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Interferons & Antibodies
 antibodies = read_xlsx_from_folder("./data/Wave 5/Antibodies/", "_DRG.xlsx")
 ```
 
