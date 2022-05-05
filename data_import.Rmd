@@ -28,18 +28,23 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
   }
   df
 }
-# # antiviral use 
+```
+
+# COVID antiviral use 
+
+```{r}
 # drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
 # steroid administration route data
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid
 steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
-
-# reference key data
-dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
-# COVID patients AE data
-ae = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_AE.xlsx")
+# baricitinib 
+antibodies = read_xlsx_from_folder("./data/Wave 5/Antibodies/", "_DRG.xlsx")
+```
 
 # COVID patients IP data, which contains sex, age, icd9 diagnosis, drug use, death and length of stay data
+
+```{r}
+
 options(warn = -1)
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5
 ip2 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202202/Dx/", "_IP.xlsx")
@@ -49,8 +54,11 @@ ip2 = ip3 = NULL
 # filter only wave 5, ie 16th feb - 31st mar
 ip = ip %>% 
   filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16")
+```
 
 # COVID patients OP data
+
+```{r}
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/Designated Clinic
 op_drug = read_xlsx_from_folder("./data/Designated Clinic/drug/", ".xlsx")
 op_drug = op_drug %>%
@@ -64,32 +72,22 @@ op = op %>%
 demo_ip = read_xlsx_from_folder("./data/5th Wave 202202/", "_demo_IP.xlsx")
 ```
 
+# other data (optional)
+
+```{r}
+# reference key data
+dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
+# COVID patients AE data
+ae = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_AE.xlsx")
+```
+
+
 # look for antiviral data
 
 ```{r}
 drug_use$`Drug Item Code`
 unique(drug_use$`Drug Name`)
 unique(drug_use$`Drug Name`)[grepl("DEXAMETHASONE", unique(drug_use$`Drug Name`))]
-```
-
-
-# get all covid patients age, sex, drug use (or lack thereof)
-
-```{r}
-# id of patients who had > 1 type antiviral
-id_over1_type_antiviral = drug_use %>% 
-  select(`Reference Key`, `Dispensing Date (yyyy-mm-dd)`, `Drug Name`) %>% 
-  group_by(`Reference Key`) %>%
-  distinct(`Drug Name`) %>%
-  count(`Reference Key`) %>%
-  ungroup() %>%
-  filter(n > 1) %>% 
-  pull(`Reference Key`)
-drug_use_shortlist = drug_use %>% 
-  select(`Reference Key`, `Prescription Start Date`, `Prescription End Date`, `Drug Name`) %>%
-  group_by(`Reference Key`, `Drug Name`) %>%
-  summarise(`Prescription Start Date` = first(`Prescription Start Date`),
-            `Drug Name` = first(`Drug Name`))
 ```
 
 

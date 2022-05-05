@@ -115,7 +115,7 @@ calculate_hr = function(df,
   #'
   #' @param df Dataframe. A dataframe that contains the covariates
   #' @param covariates. [string]. vector of strings of col names that are covariates
-  #' @param eventdata Dataframe. A dataframe that contains HN Number, event and time to event 
+  #' @param eventdata Dataframe. A dataframe that contains HN Number and time to event 
   #' with exactly mentioned column names
   #' @return (dataframe, dataframe). A list of hazard ratio results and table of descriptive stats
   #' 
@@ -127,7 +127,8 @@ calculate_hr = function(df,
     select(-`HN Number`)
   ip_icu = ip_icu %>%
     # replace timetoevent NA, impute event, right-censor, factorise
-    mutate(event = ifelse(is.na(event), 0, event),
+    mutate(event = ifelse(is.na(timetoevent), 0, 1),
+           timetoevent = as.numeric(timetoevent),
            timetoevent = ifelse(is.na(timetoevent), 28, timetoevent),
            across(age_group:event, factor),
            age_group = ifelse(age_group != "under65", "65plus", age_group))
@@ -136,7 +137,7 @@ calculate_hr = function(df,
   
   # nrow(ip_icu)
   icu_hr = as.data.frame(c())
-  x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c('event', 'timttoevent')]
+  x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c('event', 'timetoevent')]
   # iterate over cols
   for(x in x_factors){
     
@@ -146,7 +147,7 @@ calculate_hr = function(df,
     icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95))
   }
   icu_hr 
-  ip_tab_icu = CreateTableOne(data = select(ip_icu, -daystillicu), strata = c("icu"), test = F)
+  ip_tab_icu = CreateTableOne(data = select(ip_icu, -timetoevent), strata = c("event"), test = F)
   print(ip_tab_icu, smd = T)
   list(icu_hr, ip_tab_icu)
 }

@@ -1,0 +1,17 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+icu = demo_ip %>%
+  filter(grepl("ICU", `Clinical Specialty (EIS)`),
+         grepl("Transfer In", `Movement Type`)) %>%
+  select(`HN Number`, `Admission Date (yyyy-mm-dd)`, `Movement Time`) %>%
+  mutate(daystillicu = date(ymd_hm(`Movement Time`)) - ymd(`Admission Date (yyyy-mm-dd)`))
+icu = aggregate(.~`HN Number`, icu, min)  %>%
+  select(-`Admission Date (yyyy-mm-dd)`, -`Movement Time`)
+icu %>% count(`HN Number`) %>% filter(n > 1)
+# icu %>% filter(`HN Number` == "HN22003835P")
+```
+

@@ -49,6 +49,8 @@ ip_first_by_patient_id = df_ip %>%
   group_by(`Reference Key`) %>%
   slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
   ungroup()
+
+writexl::write_xlsx(ip_first_by_patient_id, "./ip_first_admission_id.xlsx")
 ```
 
 # medication status of IP epsiodes with IP data only
@@ -74,6 +76,7 @@ medIPdf =
 medIPdf = aggregate(medIPdf, by = list(medIPdf[, "HN Number"]), FUN = "max") %>%
   select(-Group.1)
 
+# ----------------
 # severe covid-related meds status
 # dexamethasone
 dexamethasone_shortlist = steroid %>%
@@ -94,6 +97,25 @@ dexamethasone_shortlist = dexamethasone_shortlist %>%
   select(`HN Number`, daystilldexa)
 
 dexamethasone_shortlist = aggregate(daystilldexa~`HN Number`, dexamethasone_shortlist, min)
+# baricitinib
+baricitinib_shortlist = antibodies %>%
+  select(`Reference Key`, `Prescription Start Date`, `Drug Name`) %>%
+  filter(grepl("BARICITINIB", `Drug Name`)) %>%
+  left_join(ip_first_by_patient_id,.) %>%
+  filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
+           ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
+  mutate(daystillbari = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`)) 
+
+# reference key of patients prescribed baricitinib
+baricitinibid_shortlist = baricitinib_shortlist %>%
+  select(`Reference Key`) %>%
+  distinct()
+
+# df of HN Number and difference between admission date and prescription date
+baricitinib_shortlist = baricitinib_shortlist %>%
+  select(`HN Number`, daystillbari)
+baricitinib_shortlist = aggregate(daystillbari~`HN Number`, baricitinib_shortlist, min)
+# ------------------------
 # combine with OP meds status (incomplete)
 # 1. match by reference key &
 # 2. appointment date <= (first) admission date
@@ -119,6 +141,7 @@ medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "ma
   mutate_at(2:length(colnames(medIOPdf)), factor) %>%
   mutate_at(2:length(colnames(medIOPdf)), ~replace_na(., 0))
 
+writexl::write_xlsx(medIOPdf, "./medIOPdf.xlsx")
 ```
 
 # comorbs, change to comorbidity package
@@ -180,7 +203,7 @@ unique(ip_diag$cci)
 
 # check if there is any NA, missing data
 ip_diag %>% filter_all((any_vars(is.na(.))))  
-
+writexl::write_xlsx(ip_diag, "./ip_diag.xlsx")
 ```
 
 
@@ -267,9 +290,6 @@ ip_death_los = df_ip %>%
          ) %>%
   filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Admission Date (yyyy-mm-dd)`) <= "2022-03-31")  
 
-  # left_join with table 1 data
-  # %>% left_join(ip_first_by_patient_id, .)
-
 # impute 28d death
 ip_death_los = ip_death_los %>%
   mutate(death28d = case_when(
@@ -287,6 +307,7 @@ ip_death_los = ip_death_los %>%
      # replace na with 28
      daystilldeath = ifelse(is.na(daystilldeath), 28, daystilldeath))
 # colnames(ip_death_los)
+writexl::write_xlsx(ip_death_los, './ip_death_los.xlsx')
 ```
 
 # propensity and IPTW by ipw/weightit
@@ -298,11 +319,9 @@ ip_propensity = ip_tab1_df  %>%
   # left-join death data
   left_join(select(ip_death_los, `HN Number`, death28d)) %>%
   mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) 
-ip_propensity = ip_propensity %>%
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`)  %>%
   # replace comorbs, meds stats and death28d cols NA with 0
-  mutate(across(c(diabetes:dexamethasone, death28d), ~replace_na(., 0))) 
-ip_propensity = ip_propensity%>%
+  mutate(across(c(diabetes:dexamethasone, death28d), ~replace_na(., 0))) %>%
   # drop sex NA
   drop_na() 
   
@@ -398,68 +417,30 @@ model
 # dexamethasone HR (3)
 
 ```{r}
-ip_dexa = ip_tab1_df  %>%
-  select(`HN Number`) %>%
-  
-  left_join(select(ip_tab1_df, `HN Number`,age_group, Sex, obesity, diabetes, molnupiravir, paxlovid)) %>%
-  # left-join dexamethasone data
-  left_join(dexamethasone_shortlist) %>%
-  select(-`HN Number`)
-ip_dexa = ip_dexa %>%
-  # replace daystilldexa NA, impute dexamethasone, factorise
-  mutate(dexamethasone = ifelse(!is.na(daystilldexa), 1, 0),
-         daystilldexa = ifelse(is.na(daystilldexa), 28, daystilldexa),
-         across(age_group:dexamethasone, factor),
-         age_group = ifelse(age_group != "under65", "65plus", age_group))
-  
-ip_dexa %>% filter_all(any_vars(is.na(.)))
-nrow(ip_dexa)
-dexa_hr = as.data.frame(c())
-x_factors = colnames(ip_dexa)[!colnames(ip_dexa) %in% c("daystilldexa", "dexamethasone")]
-# iterate over cols
-for(x in x_factors){
-  
-  iformula <- as.formula(sprintf("Surv(as.numeric(daystilldexa), as.numeric(dexamethasone)) ~ %s", x))
-  coxfit_dexa <- coxph(formula = iformula, 
-                data = ip_dexa)
-  dexa_hr = bind_rows(dexa_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95))
-}
-dexa_hr 
-ip_tab3 = CreateTableOne(data = select(ip_dexa, -daystilldexa), strata = c("dexamethasone"), test = F)
-print(ip_tab3, smd = T)
+dexamethasone_shortlist = dexamethasone_shortlist %>%
+  rename(timetoevent = daystilldexa)
+results_dexa = calculate_hr(df = ip_tab1_df,
+             eventdata = dexamethasone_shortlist)
+results_dexa
 ```
 
 # ICU HR
 
 ```{r}
-ip_icu = ip_tab1_df  %>%
-  select(`HN Number`) %>%
-  left_join(select(ip_tab1_df, `HN Number`,age_group, Sex, obesity, diabetes, molnupiravir, paxlovid)) %>%
-  # left-join icu data
-  left_join(icu) %>%
-  select(-`HN Number`)
-ip_icu = ip_icu %>%
-  # replace daystillicu NA, impute icu, factorise
-  mutate(icu = ifelse(is.na(icu), 0, icu),
-         daystillicu = ifelse(is.na(daystillicu), 28, daystillicu),
-         across(age_group:icu, factor),
-         age_group = ifelse(age_group != "under65", "65plus", age_group))
-  
-ip_icu %>% filter_all(any_vars(is.na(.)))
-
-# nrow(ip_icu)
-icu_hr = as.data.frame(c())
-x_factors = colnames(ip_icu)[!colnames(ip_icu) %in% c("daystillicu", "icu")]
-# iterate over cols
-for(x in x_factors){
-  
-  iformula <- as.formula(sprintf("Surv(as.numeric(daystillicu), as.numeric(icu)) ~ %s", x))
-  coxfit_dexa <- coxph(formula = iformula, 
-                data = ip_icu)
-  icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95))
-}
-icu_hr 
-ip_tab_icu = CreateTableOne(data = select(ip_icu, -daystillicu), strata = c("icu"), test = F)
-print(ip_tab_icu, smd = T)
+icu = icu %>%
+  rename(timetoevent = daystillicu)
+results_icu = calculate_hr(df = ip_tab1_df,
+             eventdata = icu)
+results_icu
 ```
 
+
+# baricitinib HR
+
+```{r}
+baricitinib_shortlist = baricitinib_shortlist %>%
+  rename(timetoevent = daystillbari)
+results_bari = calculate_hr(df = ip_tab1_df,
+             eventdata = baricitinib_shortlist)
+results_bari
+```

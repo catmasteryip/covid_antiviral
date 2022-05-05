@@ -6,4 +6,5 @@
 !OP_data.Rmd
 !scripts/
 !scripts/*
+!demo_IP.Rmd
 .Rproj.user
