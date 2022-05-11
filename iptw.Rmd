@@ -1,0 +1,109 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# propensity and IPTW by weightit
+
+```{r}
+# as.factor cateogorical cols and left_join ip_death_los data
+ip_propensity = ip_tab1_df  %>%
+  select(-age) %>%
+  # left-join death data
+  left_join(select(ip_death_los, `HN Number`, death28d)) %>%
+  mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
+  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`)  %>%
+  # replace comorbs, meds stats and death28d cols NA with 0
+  mutate(across(c(diabetes:dexamethasone, death28d), ~replace_na(., 0))) %>%
+  # drop sex NA
+  drop_na() 
+  
+
+# check if there is any NA, missing data
+ip_propensity %>% filter_all((any_vars(is.na(.))))
+# write to xlsx
+# writexl::write_xlsx(ip_propensity, path = "./ps_analysis_v5.xlsx")
+
+ip_propensity = ip_propensity %>%
+  select(-dexamethasone, -baricitinib)
+ip_tab1_p = CreateTableOne(data = ip_propensity, strata = "paxlovid", test = F)
+# print(ip_tab1_p)
+
+ip_tab1_p_Mat <- print(ip_tab1_p, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
+ip_tab1_p_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_p_Mat),ip_tab1_p_Mat))
+## Save to a xlsx
+writexl::write_xlsx(ip_tab1_p_Mat, path = "./tableonep.xlsx")
+
+ip_tab1_m = CreateTableOne(data = ip_propensity, strata = "molnupiravir", test = F)
+# print(ip_tab1_m, smd = T)
+ip_tab1_m_Mat <- print(ip_tab1_m, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
+ip_tab1_m_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_m_Mat),ip_tab1_m_Mat))
+## Save to a xlsx
+writexl::write_xlsx(ip_tab1_m_Mat, path = "./tableone_m.xlsx")
+```
+
+# propensity iptw paxvlovid, ATT
+
+```{r}
+x_factors = colnames(ip_propensity)
+x_factors = x_factors[! x_factors %in% c("paxlovid", "death28d", "baricitinib", "dexamethasone", "parkinsons")]
+
+# weightit 
+function_call<-paste0("weight <- weightit(paxlovid ~ ",paste(x_factors, collapse = "+"), 
+              ", data = ip_propensity, method = \"ps\", 
+              estimand = \"ATT\")"
+              )
+eval(parse(text = function_call))
+
+# diagnostics of weighting
+
+bal.tab(weight, un = T)
+summary(weight)
+
+clus <- svydesign(id =~ 1, weights = weight$weights, data = ip_propensity)
+res <- svyglm(death28d ~ molnupiravir, design = clus,family = binomial)
+ps_holder = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
+ps_holder %>% filter(term != "(Intercept)")
+
+ip_tab1_p_weighted = svyCreateTableOne(data = clus, strata = "paxlovid", test = F)
+# print(ip_tab1_p_weighted, smd = T)
+
+ip_tab1_pweighted_Mat <- print(ip_tab1_p_weighted, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
+ip_tab1_pweighted_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_pweighted_Mat),ip_tab1_pweighted_Mat))
+## Save to a xlsx
+writexl::write_xlsx(ip_tab1_pweighted_Mat, path = "./tableone_p_weighted.xlsx")
+```
+
+# propensity iptw molnupiravir, ATT
+
+```{r}
+x_factors = colnames(ip_propensity)
+x_factors = x_factors[! x_factors %in% c("molnupiravir", "death28d", "baricitinib", "dexamethasone", "parkinsons")]
+
+# weightit 
+function_call<-paste0("weight <- weightit(molnupiravir ~ ",paste(x_factors, collapse = "+"), 
+              ", data = ip_propensity, method = \"ps\", 
+              estimand = \"ATT\")"
+              )
+eval(parse(text = function_call))
+
+# diagnostics of weighting
+
+bal.tab(weight, un = T)
+summary(weight)
+
+clus <- svydesign(id =~ 1, weights = weight$weights, data = ip_propensity)
+res <- svyglm(death28d ~ molnupiravir, design = clus,family = binomial)
+ps_holder = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
+ps_holder %>% filter(term != "(Intercept)")
+```
+
+
+
+# weighted descriptive stats
+
+```{r}
+
+ip_tab1_m_weighted = svyCreateTableOne(data = clus, strata = "molnupiravir", test = F)
+print(ip_tab1_m_weighted, smd = T)
+```

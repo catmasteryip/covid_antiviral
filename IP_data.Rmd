@@ -8,12 +8,14 @@ output: html_notebook
 ```{r}
 library(survival)
 library(broom)
-library(ipw)
 library(survey)
 library(comorbidity)
 library(WeightIt)
 library(cobalt)
 library(tableone)
+library(ggfortify)
+library(dplyr)
+library(tidyr)
 ```
 
 
@@ -133,13 +135,18 @@ medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols),
                      medIPdf_shortlist %>% select(c(common_cols, "baricitinib")))
 
 # aggregate medIOPdf by reference key
-medIOPdf = aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
+medIOPdf = medIOPdf %>%
+  # as.numeric binary cols
+  mutate_at(2:length(colnames(medIOPdf)), as.numeric)
+medIOPdf =
+  aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
   select(-Group.1) %>%
   # left-join with dexamethasone meds status 
   mutate(dexamethasone = ifelse(`Reference Key` %in% dexamethasone_idshortlist$`Reference Key`, 1, 0)) %>%
+  mutate_at(2:length(colnames(medIOPdf)), ~replace_na(., "0")) %>%
   # as.factor binary cols
-  mutate_at(2:length(colnames(medIOPdf)), factor) %>%
-  mutate_at(2:length(colnames(medIOPdf)), ~replace_na(., 0))
+  mutate_at(2:length(colnames(medIOPdf)), factor) 
+  
 
 writexl::write_xlsx(medIOPdf, "./medIOPdf.xlsx")
 ```
@@ -269,10 +276,7 @@ ip_tab1_dfholder = ip_tab1_df %>%
 # check if there is any NA, missing data
 ip_tab1_dfholder %>% filter_all((any_vars(is.na(.))))  
 
-ip_tab1_p = CreateTableOne(data = ip_tab1_dfholder, strata = "paxlovid", test = F)
-print(ip_tab1_p, smd = T)
-# ip_tab1_m = CreateTableOne(data = ip_tab1_dfholder, strata = "molnupiravir", smd = T)
-# ip_tab1_m
+
 ```
 
 # 28d mortality and length of stay
@@ -310,67 +314,10 @@ ip_death_los = ip_death_los %>%
 writexl::write_xlsx(ip_death_los, './ip_death_los.xlsx')
 ```
 
-# propensity and IPTW by ipw/weightit
-
-```{r}
-# as.factor cateogorical cols and left_join ip_death_los data
-ip_propensity = ip_tab1_df  %>%
-  select(-age) %>%
-  # left-join death data
-  left_join(select(ip_death_los, `HN Number`, death28d)) %>%
-  mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`)  %>%
-  # replace comorbs, meds stats and death28d cols NA with 0
-  mutate(across(c(diabetes:dexamethasone, death28d), ~replace_na(., 0))) %>%
-  # drop sex NA
-  drop_na() 
-  
-
-# check if there is any NA, missing data
-ip_propensity %>% filter_all((any_vars(is.na(.))))
-# write to xlsx
-writexl::write_xlsx(ip_propensity, path = "./ps_analysis_v4.xlsx")
-```
-
-# 28d death propensity and ATT
-
-```{r}
-x_factors = colnames(ip_propensity)[! colnames(ip_propensity) %in% c("paxlovid", "death28d", "baricitinib", "dexamethasone")]
-x_factors = x_factors[! x_factors %in% c("parkinsons")]
-# x_factors = c("age_group", "Sex", "obesity", "diabetes", "molnupiravir")
-# weightit 
-function_call<-paste0("weight <- weightit(paxlovid ~ ",paste(x_factors, collapse = "+"), 
-              ", data = ip_propensity, method = \"ps\", 
-              estimand = \"ATT\")"
-              )
-eval(parse(text = function_call))
-
-# diagnostics of weighting
-
-bal.tab(weight, un = T)
-summary(weight)
 
 
 
-clus <- svydesign(id =~ 1, weights = weight$weights, data = ip_propensity)
-res <- svyglm(death28d ~ paxlovid, design = clus,family = binomial)
-ps_holder = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
-ps_holder %>% filter(term != "(Intercept)")
 
-clus <- svydesign(id =~ 1, weights = weight$weights, data = ip_propensity)
-res <- svyglm(dexamethasone ~ paxlovid, design = clus,family = binomial)
-ps_dexa = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
-ps_dexa %>% filter(term != "(Intercept)")
-
-writexl::write_xlsx(ps_anlysis, path = "./ps_analysis_ATT.xlsx")
-```
-
-# weighted descriptive stats
-
-```{r}
-ip_tab1_p_weighted = svyCreateTableOne(data = clus, strata = "paxlovid", test = F)
-print(ip_tab1_p_weighted, smd = T)
-```
 
 # table 2b descriptive 
 
@@ -399,9 +346,20 @@ death_shortlist = ip_death_los %>%
 results_death = calculate_hr(df = ip_tab1_df,
              eventdata = death_shortlist)
 results_death
+surv_death = results_death[[3]]
+table_hr = results_dexa[[1]]
+table_hr
+# writexl::write_xlsx(surv_death, "./intermediates/surv_death.xlsx")
+
+# death28d KM estimation of entire pop.
+death.fit = survival::survfit(Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = surv_death)
+
+autoplot(death.fit, ylim = c(0, 1))
+
 ```
 
-# COVID antiviral HR (3)
+# COVID antiviral HR (optional)
 
 ```{r}
 # dexamethasone
@@ -409,7 +367,10 @@ dexamethasone_shortlist = dexamethasone_shortlist %>%
   rename(timetoevent = daystilldexa)
 results_dexa = calculate_hr(df = ip_tab1_df,
              eventdata = dexamethasone_shortlist)
-results_dexa
+
+ip_dexamethasone = results_dexa[[3]]
+writexl::write_xlsx(ip_dexamethasone, "./intermediates/ip_dexamethasone.xlsx")
+
 
 # baricitinib
 baricitinib_shortlist = baricitinib_shortlist %>%
@@ -417,13 +378,25 @@ baricitinib_shortlist = baricitinib_shortlist %>%
 results_bari = calculate_hr(df = ip_tab1_df,
              eventdata = baricitinib_shortlist)
 results_bari
+```
 
+# Both COVID antiviral HR 
+
+```{r}
 # dexamethasone or baricitinib
 dexabari_shortlist = bind_rows(dexamethasone_shortlist,baricitinib_shortlist)
 dexabari_shortlist = aggregate(.~`HN Number`, dexabari_shortlist, min)
 results_dexabari = calculate_hr(df = ip_tab1_df,
              eventdata = dexabari_shortlist)
 results_dexabari
+surv_dexabari = results_dexabari[[3]]
+writexl::write_xlsx(surv_dexabari, "./intermediates/surv_dexabari.xlsx")
+
+# covid antiviral prescription KM estimation of entire pop.
+dexabari.fit = survival::survfit(Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = surv_dexabari)
+
+autoplot(dexabari.fit, ylim=c(0,1))
 ```
 
 # ICU HR
@@ -434,22 +407,40 @@ icu = icu %>%
 results_icu = calculate_hr(df = ip_tab1_df,
              eventdata = icu)
 results_icu
+surv_icu = results_icu[[3]]
+writexl::write_xlsx(surv_icu, "./intermediates/surv_icu.xlsx")
+
+# ICU KM estimation of entire pop.
+prio.fit = survival::survfit(Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = surv_icu)
+
+autoplot(prio.fit)
 ```
 
-# IPTW HR 
+# IPTW KM analysis
 
 ```{r}
-# dexamethasone
-dexamethasone_shortlist = dexamethasone_shortlist %>%
-  rename(timetoevent = daystilldexa)
-weighted_results_dexa = calculate_hr(df = ip_tab1_df,
-                                     eventdata = dexamethasone_shortlist,
-                                     weights = weight$weights)
-weighted_results_dexa
-# death28d
-weighted_results_death = calculate_hr(df = ip_tab1_df,
-                                     eventdata = death_shortlist,
-                                     weights = weight$weights)
-weighted_results_death
+# death28d KM estimation of entire pop.
+weighted.death.fit = survival::survfit(Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = surv_death,
+                           weights = weight$weights)
+
+autoplot(weighted.death.fit, ylim = c(0,1))
+
+# dexabari KM estimation of entire pop.
+weighted.dexabari.fit = survival::survfit(Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = surv_dexabari,
+                           weights = weight$weights)
+
+autoplot(weighted.dexabari.fit, ylim = c(0,1))
+
+# dexabari KM estimation of entire pop.
+weighted.icu.fit = survival::survfit(Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = surv_icu,
+                           weights = weight$weights)
+
+autoplot(weighted.icu.fit)
+
 ```
 
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           

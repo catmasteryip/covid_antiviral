@@ -160,22 +160,35 @@ calculate_hr = function(df,
       df_hr = filter(ip_icu, eval(parse(text = paste0(x, "==1")))) %>% 
         mutate(id = 1:n()) %>% 
         select(-x) 
-      coxfit_dexa <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+      coxfit_positive <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
                            data = df_hr,
-                           weights = weights[df_hr$id])
+                           weights = weights[df_hr$id],
+                           model = T)
+      coxfit_negative <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                               data = df_hr,
+                               weights = weights[df_hr$id],
+                               model = T)
     }else{
-      coxfit_dexa <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
-                           data = filter(ip_icu, eval(parse(text = paste0(x, "==1")))) %>% 
-                             select(-x))
+      coxfit_positive <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                           data = df_hr,
+                           model = T)
+      coxfit_negative <- coxph(formula = Surv(as.numeric(timetoevent), as.numeric(event), type = "right") ~ paxlovid, 
+                               data = df_hr,
+                               model = T)
     }
     # iformula <- as.formula(sprintf("Surv(as.numeric(timetoevent), as.numeric(event)) ~ %s", x))
     
-    icu_hr = bind_rows(icu_hr, tidy(coxfit_dexa, exponentiate = T, conf.int = T, conf.level = .95) %>%
-                         mutate(xfactor = x))
+    icu_hr = bind_rows(icu_hr, 
+                       tidy(coxfit_positive, exponentiate = T, conf.int = T, conf.level = .95) %>%
+                         mutate(xfactor = x,
+                                cox_model = list(coxfit_dexa)),
+                       tidy(coxfit_negative, exponentiate = T, conf.int = T, conf.level = .95) %>%
+                         mutate(xfactor = x,
+                                cox_model = list(coxfit_dexa)))
   }
   icu_hr 
   ip_tab_icu = CreateTableOne(data = select(ip_icu, -timetoevent), strata = c("event"), test = F)
   print(ip_tab_icu, smd = T)
-  list(icu_hr, ip_tab_icu)
+  list(icu_hr, ip_tab_icu, ip_icu)
 }
 

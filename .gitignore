@@ -2,6 +2,7 @@
 !data_import.Rmd
 !AE_data.Rmd
 !IP_data.Rmd
+!iptw.Rmd
 !.gitignore
 !OP_data.Rmd
 !scripts/
