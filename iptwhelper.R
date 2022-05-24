@@ -27,10 +27,12 @@ iptw_tableone = function(df,
                 estimand = \"ATT\")"
   )
   eval(parse(text = function_call))
+  
+  # unweighted table one
   tab1_unweighted = CreateTableOne(data = select(df, c(treatment, x_factors)), 
                                    strata = treatment, 
                                    test = F)
-  # unweighted table one
+  
   tab1_unweighted_Mat <- print(tab1_unweighted, quote = FALSE, 
                                noSpaces = TRUE, printToggle = FALSE, smd = T)
   tab1_unweighted_Mat = as.data.frame(cbind(" " = rownames(tab1_unweighted),tab1_unweighted))
@@ -61,7 +63,7 @@ iptw_regression_tidy = function(df,
   #' @param treatment String. A string that specifies the treatment column in df
   #' @return A DataFrame that contains the exponentiated coeff/odds ratio given treatment to outcome
   
-  clus <- svydesign(id =~ 1, weights = weight$weights, data = ip_propensity)
+  clus <- svydesign(id =~ 1, weights = weight$weights, data = df)
   res <- svyglm(paste0(outcome, " ~ ", treatment), design = clus,family = binomial)
   tidy_reg = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
   return(tidy_reg %>% filter(term != "(Intercept)"))
