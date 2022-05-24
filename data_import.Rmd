@@ -33,7 +33,7 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
 # COVID antiviral use 
 
 ```{r}
-# drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
+drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
 # steroid administration route data
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid
 steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
