@@ -84,15 +84,14 @@ ip.paxlovid.daystillpaxlovid = ip_drug_use %>%
   mutate(daystillpaxlovid = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
            as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
   filter(daystillpaxlovid > 0,
-         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
+         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
+  group_by(`Reference Key`) %>%
+  summarise(daystillpaxlovid = min(daystillpaxlovid)) 
+
+ip.paxlovid.daystillpaxlovid %>% count()
 
 ggplot(ip.paxlovid.daystillpaxlovid, aes(x = daystillpaxlovid)) +
   geom_histogram()
-
-ip.paxlovid.daystillpaxlovid %>% 
-  group_by(`Reference Key`) %>%
-  summarise(daystillpaxlovid = min(daystillpaxlovid)) %>%
-  count()
 ```
 
 # medication imputation cont'd

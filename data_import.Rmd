@@ -82,7 +82,6 @@ dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
 ae = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_AE.xlsx")
 ```
 
-
 # look for antiviral data
 
 ```{r}
