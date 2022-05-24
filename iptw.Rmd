@@ -53,6 +53,12 @@ clus = iptw_tableone(df = ip_propensity,
               x_factors = x_factors,
               path_of_unweighted_tableone = "./p.unweighted.tableone.xlsx",
               path_of_weighted_tableone = "./p.weighted.tableone.xlsx")
+weights = clus
+result = iptw_regression_tidy(df = ip_propensity, 
+                     weight = weights, 
+                     outcome = "death28d",
+                     treatment = "paxlovid")
+result
 ```
 
 # ATT of death28d as outcome

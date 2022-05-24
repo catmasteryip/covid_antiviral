@@ -1,6 +1,9 @@
 library(WeightIt)
 library(dplyr)
 library(tableone)
+library(survival)
+library(survey)
+library(broom)
 
 iptw_tableone = function(df, 
                          treatment, 
