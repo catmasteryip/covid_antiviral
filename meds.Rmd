@@ -97,7 +97,15 @@ dexamethasone_shortlist = steroid %>%
   left_join(ip.id,.) %>%
   filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
            ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
-  mutate(daystilldexa = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`))
+  mutate(daystilldexa = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  # get earliest dispension of dexamethasone by reference key
+  group_by(`Reference Key`) %>%
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup()
+
+
+dexamethasone_shortlist = dexamethasone_shortlist %>%
+  select(`Reference Key`, daystilldexa)
 
 # # reference key of patients prescribed dexamethasone
 # dexamethasone_idshortlist = dexamethasone_shortlist %>%
@@ -108,7 +116,7 @@ dexamethasone_shortlist = steroid %>%
 # dexamethasone_shortlist = dexamethasone_shortlist %>%
 #   select(`HN Number`, daystilldexa)
 
-dexamethasone_shortlist = aggregate(daystilldexa~`Reference Key`, dexamethasone_shortlist, min)
+# dexamethasone_shortlist = aggregate(daystilldexa~`Reference Key`, dexamethasone_shortlist, min)
 # baricitinib
 baricitinib_shortlist = antibodies %>%
   select(`Reference Key`, `Prescription Start Date`, `Drug Name`) %>%
@@ -116,8 +124,14 @@ baricitinib_shortlist = antibodies %>%
   left_join(ip.id,.) %>%
   filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
            ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
-  mutate(daystillbari = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`)) 
+  mutate(daystillbari = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  # get earliest dispension of baricitinib by reference key
+  group_by(`Reference Key`) %>%
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup()
 
+baricitinib_shortlist = baricitinib_shortlist %>%
+  select(`Reference Key`, daystillbari)
 # # reference key of patients prescribed baricitinib
 # baricitinibid_shortlist = baricitinib_shortlist %>%
 #   # select(`Reference Key`) %>%
@@ -126,7 +140,7 @@ baricitinib_shortlist = antibodies %>%
 # # df of HN Number and difference between admission date and prescription date
 # baricitinib_shortlist = baricitinib_shortlist %>%
 #   select(`HN Number`, daystillbari)
-baricitinib_shortlist = aggregate(daystillbari~`Reference Key`, baricitinib_shortlist, min)
+# baricitinib_shortlist = aggregate(daystillbari~`Reference Key`, baricitinib_shortlist, min)
 
 writexl::write_xlsx(dexamethasone_shortlist, path = "./ip.dexamethasone.xlsx")
 writexl::write_xlsx(baricitinib_shortlist, path = "./ip.baricitinib.xlsx")
@@ -166,14 +180,19 @@ ip.paxlovid = ip.paxlovid %>%
            as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
   filter(daystillpaxlovid > 0,
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
+  # get earliest dispension of antiviral by reference key
   group_by(`Reference Key`) %>%
-  summarise(daystillpaxlovid = min(daystillpaxlovid)) 
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup()
+
 ip.paxlovid = ip.paxlovid %>%
-  filter(daystillpaxlovid <= 4)
+  filter(daystillpaxlovid <= 4)%>%
+  select(`Reference Key`, daystillpaxlovid)
+
 writexl::write_xlsx(ip.paxlovid, path = "./ip.paxlovid.under5d.xlsx")
 ```
 
-# molnupiravir
+# ip.molnupiravir
 
 ```{r}
 # prescription date data
@@ -192,11 +211,14 @@ ip.molnupiravir = ip.molnupiravir %>%
            as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
   filter(daystillmolnupiravir > 0,
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
+  # get earliest dispension of antiviral by reference key
   group_by(`Reference Key`) %>%
-  summarise(daystillmolnupiravir = min(daystillmolnupiravir)) 
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup()
 
 ip.molnupiravir = ip.molnupiravir %>%
-  filter(daystillmolnupiravir <= 4)
+  filter(daystillmolnupiravir <= 4) %>%
+  select(`Reference Key`, daystillmolnupiravir)
 writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.under5d.xlsx")
 ```
 
