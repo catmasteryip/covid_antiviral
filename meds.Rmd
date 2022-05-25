@@ -1,0 +1,119 @@
+---
+title: "meds"
+---
+
+# all drugs except bronchodilators and inhaled corticosteroids, and cancer drugs (ip.drug.imputed)
+
+```{r}
+meds_dict_untidy <- tribble(
+        ~drug.cat, ~drug.name,
+        # antiplatelets
+        "antiplatelets","Aspirin
+Ticlopidine, Clopidogrel, Prasugrel, Ticagrelor, Cangrelor, 
+Abciximab, Eptifibatide, Tirofiban
+Dipyridamole, Cilostazol
+
+Warfarin, Heparin
+Rivaroxaban, Dabigatran,Apixaban,Edoxaban,Enoxaparin,Fondaparinux",
+
+        # ace inhibitors
+        "ace_inhibitors", "Benazepril, Captopril, Clizapril, Enalapril, Enalaprilat, Fosinopril, Lisinopril, Moexipril, Perindopril, Quinapril, Ramipril, Trandolapril
+Azilsartan, Candesartan, Eprosartan, Irbesartan, Losartan, Olmesartan, Telmisartan, Valsartan
+",
+
+        # beta blockers
+        "beta_blockers", "Acebutalol, Atenolol, Betaxolol, Bisoprolol, Carteolol, Carvedilol, Esmolol, Labetalol, Levobunolol, Metoprolol, Nadolol, Nebivolol, Pindolol, Propanolol, Sotalol, Timolol",
+        # calcium channel blockers
+        "calcium_channel_blockers", "Amlodipine, Clevidipine, Felodipine, Flunarzine, Isradipine, Levamlodipine, Nicardipine, Nifedipine, Verapamil, Diltiaze", 
+
+        # diuretics
+        "diuretics", "Bendroflumethiazide, Chlorothiazide, Chlortalidone, Cyclopenthiazide, Hydrochlorothiazide, Indapamide, Metolazone, Poluthiazide, Xipamide, Bumetanide, Furosemide, Lasix, Torasemide, Amiloride, Eplerenone, Spironolactone, Triamterene, Amilozide, Amilofruse, Triamterzide, Mannitol",
+        
+        # statins
+        "statins", "Atorvastatin, Simvastatin, Fluvastatin, Lovastatin, Pitavastatin, Pravastatin, Rosuvastatin",
+
+        # antidiabetics
+        "antidiabetics", "Canagliflozin, dapagliflozin, empagliflozin,Chlorpropamide, glimepiride, glipizide, glyburide, tolazamide, tolbutamide
+Rosiglitazone, pioglitazone, Metformin, Nateglinide, repaglinide, Insulin, albiglutide, dulaglutide, exenatide, liraglutide, lixisenatide, pramlintide, Alogliptan, linagliptan, saxagliptin, sitagliptin
+
+Acarbose, migiltol",
+        
+        # rheumatoid
+        "rheumatoid", "Allopurinol, Colchicine, Hydroxychloroquine, Sulfasalazine, Febuxostat, Rasburicase, Leflunomide, Baricitinib, Certolizumab, Tofacitinib, Etanercept, Tocilizumab, Adalimumab, Probenecid, Ixekizumab, Secukinumab, Ustekinumab, Belimumab, Golimumab",
+
+)
+```
+
+# impute the mentioned drugs
+
+```{r}
+# make a medication dictionary with drug categories and drug names, names separated by comma or newline
+meds_dict = make_meds_dict(as.data.frame(meds_dict_untidy))
+meds_dict
+# must contain `Drug Name` column
+ip.drug.imputed = impute_meds_w_dict(ip.drug, meds_dict)
+ip.drug.imputed =  
+  ip.drug.imputed %>%
+  select(-`Drug Name`) %>%
+  distinct()
+
+# aggregate by HN Number, get 1 if possible
+ip.drug.imputed = aggregate(ip.drug.imputed, by = list(ip.drug.imputed[, "HN Number"]), FUN = "max") %>%
+  select(-Group.1)
+
+writexl::write_xlsx(ip.drug.imputed, path = "./ip.drug.imputed.xlsx")
+```
+
+# dexamethasone and baricitinib
+
+```{r}
+# ----------------
+# severe covid-related meds status
+# dexamethasone
+dexamethasone_shortlist = steroid %>%
+  select(`Reference Key`, `Prescription Start Date`, `Drug Name`, `Route`) %>%
+  filter(grepl("DEXAMETHASONE", `Drug Name`) & (`Route` %in% c("ORAL","PARENTERAL"))) %>%
+  left_join(ip.id,.) %>%
+  filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
+           ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
+  mutate(daystilldexa = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`))
+
+# reference key of patients prescribed dexamethasone
+dexamethasone_idshortlist = dexamethasone_shortlist %>%
+  select(`Reference Key`) %>%
+  distinct()
+
+# df of HN Number and difference between admission date and prescription date
+dexamethasone_shortlist = dexamethasone_shortlist %>%
+  select(`HN Number`, daystilldexa)
+
+dexamethasone_shortlist = aggregate(daystilldexa~`HN Number`, dexamethasone_shortlist, min)
+# baricitinib
+baricitinib_shortlist = antibodies %>%
+  select(`Reference Key`, `Prescription Start Date`, `Drug Name`) %>%
+  filter(grepl("BARICITINIB", `Drug Name`)) %>%
+  left_join(ip.id,.) %>%
+  filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
+           ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
+  mutate(daystillbari = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`)) 
+
+# reference key of patients prescribed baricitinib
+baricitinibid_shortlist = baricitinib_shortlist %>%
+  select(`Reference Key`) %>%
+  distinct()
+
+# df of HN Number and difference between admission date and prescription date
+baricitinib_shortlist = baricitinib_shortlist %>%
+  select(`HN Number`, daystillbari)
+baricitinib_shortlist = aggregate(daystillbari~`HN Number`, baricitinib_shortlist, min)
+
+writexl::write_xlsx(dexamethasone_shortlist, path = "./ip.dexamethasone.xlsx")
+writexl::write_xlsx(baricitinib_shortlist, path = "./ip.baricitinib.xlsx")
+```
+
+# cancer drug
+
+```{r}
+
+```
+
