@@ -16,6 +16,7 @@ library(tableone)
 library(ggfortify)
 library(dplyr)
 library(tidyr)
+source("./scripts/helper.R")
 ```
 
 
@@ -54,7 +55,6 @@ ip.id = ip.nodrug %>%
 
 writexl::write_xlsx(ip_first_by_patient_id, "./ip.id.xlsx")
 ```
-
 
 # comorbs, change to comorbidity package (ip.diag)
 
@@ -116,40 +116,6 @@ unique(ip_diag$cci)
 # check if there is any NA, missing data
 ip.diag %>% filter_all((any_vars(is.na(.))))  
 writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
-```
-
-# medication status of IP epsiodes with IP data only (ip.drug)
-
-```{r}
-ip.drug = ip %>%
-  # exclude pregnancy
-  mutate(pregnancy = ifelse(if_any(diag_cols, ~between(., "630", "679.99")), T, F),
-         pregnancy = ifelse(is.na(pregnancy), F, pregnancy)) %>%
-  filter(!pregnancy) %>%
-  select(-pregnancy) %>%
-  select(`Reference Key`, `HN Number`, `Drug Name`, `Admission Date (yyyy-mm-dd)`)
-```
-
-# days till paxlovid 
-
-```{r}
-# prescription date data
-pres_date = drug_use %>% 
-  select(`Reference Key`, `Dispensing Date (yyyy-mm-dd)`, `Drug Name`) %>%
-  impute_meds()
-
-ip.drug = ip.drug %>%
-  impute_meds() %>%
-  left_join(pres_date) 
-
-ip.paxlovid.daystillpaxlovid = ip.drug %>%
-  filter(paxlovid == 1) %>%
-  mutate(daystillpaxlovid = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
-           as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
-  filter(daystillpaxlovid > 0,
-         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
-  group_by(`Reference Key`) %>%
-  summarise(daystillpaxlovid = min(daystillpaxlovid)) 
 ```
 
 # OP meds status (deprecated, do not delete)

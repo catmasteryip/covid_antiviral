@@ -30,17 +30,44 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
 }
 ```
 
-# COVID antiviral use 
+# COVID drug use 
 
 ```{r}
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/Antiviral (List of patients & drug use)/
-drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
+# 25 May 2022: jan data is missing and we dont care, becos antiviral was dispensed only after 25th feb
+antiviral = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
 # steroid administration route data
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid/
 steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
 # baricitinib 
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Interferons & Antibodies/
 antibodies = read_xlsx_from_folder("./data/Wave 5/Antibodies/", "_DRG.xlsx")
+
+```
+
+# meds status
+# onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Premorbid/Drugs
+
+```{r}
+# need filter by drug names
+antiplatelet = read_xlsx_from_folder("./data/Drugs/CVS - Antiplatelet & Coagulants/", "Dx")
+ace_inhibitor = read_xlsx_from_folder("./data/Drugs/CVS - Renin-Angiotensin/", "Dx")
+beta_blocker = read_xlsx_from_folder("./data/Drugs/CVS - Beta-blocker/", "Dx")
+calcium_channel_blockers = read_xlsx_from_folder("./data/Drugs/CVS - Calcium-channel Blocker (tbc)/", "Dx")
+diuretics = read_xlsx_from_folder("./data/Drugs/CVS - Diuretics/", "Dx")
+statins = read_xlsx_from_folder("./data/Drugs/CVS - Lipid (tbc)/", "Dx")
+system_corticosteroid = read_xlsx_from_folder("./data/Drugs/Endocrine - Corticosteroids/", "Dx")
+antidiabetics = read_xlsx_from_folder("./data/Drugs/Endorcrine - Diabetes/", "Dx")
+rheumatoids = read_xlsx_from_folder("./data/Wave 5/Rheumatology/", "Dx")
+
+# no need filter by drug names
+broncodilators = read_xlsx_from_folder("./data/Wave 5/Respiratory - bronchodilators/", "Dx")
+cromoglycate = read_xlsx_from_folder("./data/Wave 5/Respiratory - Cromoglycate/", "Dx")
+corticosteroid = read_xlsx_from_folder("./data/Wave 5/Respiratory - Inhaled Corticosteroid/", "Dx")
+
+broncodilators = bind_rows(broncodilators, cromoglycate, corticosteroid)
+cancer = read_xlsx_from_folder("./data/Wave 5/Malignancy/", "Dx")
+
 ```
 
 # COVID patients IP data, which contains sex, age, icd9 diagnosis, drug use, death and length of stay data
@@ -58,23 +85,6 @@ ip1 = ip2 = ip3 = ip4 = NULL
 # filter only 5th jan - 15th apr
 ip = ip %>% 
   filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-01-05")
-```
-
-# other data (optional)
-
-```{r}
-# reference key data
-dx = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_DX.xlsx")
-# COVID patients AE data
-ae = read_xlsx_from_folder("./data/5th Wave 202202/Dx/", "_AE.xlsx")
-```
-
-# look for antiviral data
-
-```{r}
-drug_use$`Drug Item Code`
-unique(drug_use$`Drug Name`)
-unique(drug_use$`Drug Name`)[grepl("DEXAMETHASONE", unique(drug_use$`Drug Name`))]
 ```
 
 
