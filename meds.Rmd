@@ -226,10 +226,10 @@ writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.under5d.xlsx")
 
 ```{r}
 ip.drug.all = ip.drug.imputed %>%
-  inner_join(mutate(dexamethasone_shortlist, dexamethasone = 1)) %>%
-  inner_join(mutate(baricitinib_shortlist, baricitinib = 1)) %>%
-  inner_join(mutate(ip.paxlovid, paxlovid = 1)) %>%
-  inner_join(mutate(ip.molnupiravir, molnupiravir = 1)) %>%
+  full_join(mutate(dexamethasone_shortlist, dexamethasone = 1)) %>%
+  full_join(mutate(baricitinib_shortlist, baricitinib = 1)) %>%
+  full_join(mutate(ip.paxlovid, paxlovid = 1)) %>%
+  full_join(mutate(ip.molnupiravir, molnupiravir = 1)) %>%
   select(-matches("^days"))
 writexl::write_xlsx(ip.drug.all, path = "./ip.drug.all.xlsx")
 ```
