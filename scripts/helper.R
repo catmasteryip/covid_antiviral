@@ -8,8 +8,8 @@ collapse_meds_names = function(names){
   #' Example: "Atorvastatin, Simvastatin, Fluvastatin, Lovastatin, Pitavastatin, Pravastatin, Rosuvastatin"
   #' @return A string that contains contains the drug names of one drug category, in grepl readable form collapsed by | (or condition)
   
-  # split by comma, space or newline into c(strings)
-  names = strsplit(names, split = ",|\n")
+  # split by comma or newline into c(strings)
+  names = c(strsplit(names, split = ",|\n"))
   # remove space from each entry
   names = c(sapply(names, function(x){gsub(" ", "", x, fixed = TRUE)}))
   # remove empty entries
