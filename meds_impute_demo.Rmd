@@ -1,0 +1,20 @@
+---
+title: "R Notebook"
+---
+
+```{r}
+source("./helper.R")
+# make a medication dictionary with drug categories and drug names, names separated by comma or newline
+meds_dict_untidy = as.data.frame(list("drug.category" = c("paxlovid","statin"),
+                                      "drug.names" = c("paxlovid", "Atorvastatin, Simvastatin
+                                      Fluvastatin, Lovastatin, Pitavastatin, Pravastatin
+                                      Rosuvastatin")))
+meds_dict = make_meds_dict(meds_dict_untidy)
+meds_dict
+# must contain `Drug Name` column
+df =  as.data.frame(list("Drug Name" = c("PAXLOVID", "ATORVASTATIN (ANY OTHER INFO)"))) %>%
+  rename(`Drug Name` = Drug.Name)
+df = impute_meds_w_dict(df, meds_dict)
+df
+```
+

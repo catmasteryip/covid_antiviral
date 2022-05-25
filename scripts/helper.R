@@ -4,12 +4,12 @@
 collapse_meds_names = function(names){
   #' convert a string of drug names of one drug category to grepl readable form, collapsed by | (or condition)
   #'
-  #' @param names string. A string that contains the drug names of one drug category, separated by comma, newline or space
+  #' @param names string. A string that contains the drug names of one drug category, separated by comma or newline
   #' Example: "Atorvastatin, Simvastatin, Fluvastatin, Lovastatin, Pitavastatin, Pravastatin, Rosuvastatin"
   #' @return A string that contains contains the drug names of one drug category, in grepl readable form collapsed by | (or condition)
   
   # split by comma, space or newline into c(strings)
-  names = strsplit(names, split = ",|\n|\" \"")
+  names = strsplit(names, split = ",|\n")
   # remove space from each entry
   names = c(sapply(names, function(x){gsub(" ", "", x, fixed = TRUE)}))
   # remove empty entries
@@ -26,10 +26,10 @@ make_meds_dict = function(meds_dict_untidy){
   #'
   #' @param meds_dict_untidy DataFrame. A dataframe that contains the column names of drug categories (column one), 
   #' and the corresponding drug names of every category (column two) 
-  #' but untidy with non-standardardised splits including comma, space and newline
+  #' but untidy with non-standardardised splits including comma or newline
   #' Example:
   #' meds_dict_untidy = as.data.frame(list(drug.category = "statins", 
-  #' drug.names = c("Atorvastatin Simvastatin, 
+  #' drug.names = c("Atorvastatin, Simvastatin, 
   #' Fluvastatin, Lovastatin, Pitavastatin, Pravastatin
   #'  Rosuvastatin")))
   #' @return Dataframe that is the tidy version, meds_dict
