@@ -1,5 +1,73 @@
 # it's a helper functions compilation
 
+# collapse drug names
+collapse_meds_names = function(names){
+  #' convert a string of drug names of one drug category to grepl readable form, collapsed by | (or condition)
+  #'
+  #' @param names string. A string that contains the drug names of one drug category, separated by comma, newline or space
+  #' Example: "Atorvastatin, Simvastatin, Fluvastatin, Lovastatin, Pitavastatin, Pravastatin, Rosuvastatin"
+  #' @return A string that contains contains the drug names of one drug category, in grepl readable form collapsed by | (or condition)
+  
+  # split by comma, space or newline into c(strings)
+  names = strsplit(names, split = ",|\n|\" \"")
+  # remove space from each entry
+  names = c(sapply(names, function(x){gsub(" ", "", x, fixed = TRUE)}))
+  # remove empty entries
+  names = names[names != ""]
+  # capitalise every letter 
+  names = toupper(names)
+  # collapse back to one string by |
+  names = paste0(names, collapse = "|")
+  return(names)
+}
+
+make_meds_dict = function(meds_dict_untidy){
+  #' make/tidy medication dictionary
+  #'
+  #' @param meds_dict_untidy DataFrame. A dataframe that contains the column names of drug categories (column one), 
+  #' and the corresponding drug names of every category (column two) 
+  #' but untidy with non-standardardised splits including comma, space and newline
+  #' Example:
+  #' meds_dict_untidy = as.data.frame(list(drug.category = "statins", 
+  #' drug.names = c("Atorvastatin Simvastatin, 
+  #' Fluvastatin, Lovastatin, Pitavastatin, Pravastatin
+  #'  Rosuvastatin")))
+  #' @return Dataframe that is the tidy version, meds_dict
+  
+  FUN = function(names){collapse_meds_names(names)}
+  meds_dict_untidy[,2] = sapply(meds_dict_untidy[,2], FUN)
+  return(meds_dict_untidy)
+}
+
+impute_meds_w_dict = function(df, meds_dict){
+  #' impute medication status in binary 
+  #'
+  #' @param df Dataframe. A dataframe that contains the Drug Name column from raw data
+  #' @param meds_dict DataFrame. A dataframe that contains the column names of drug categories, 
+  #' and the corresponding drug names of that category
+  #' Example:
+  #' meds_dict = as.data.frame(list("drug.category" = "paxlovid", "drug.names" = "PAXLOVID"))
+  #' @return Dataframe that mutated new cols of binary meds status
+  
+  # first drug category
+  first.drug.category = meds_dict[1, 1]
+  # last drug category
+  last.drug.category = meds_dict[nrow(meds_dict), 1]
+  # iterate dictionary
+  for(row in 1:nrow(meds_dict)){
+    # get drug category
+    drug.category = meds_dict[row,1]
+    # get drug names
+    drug.names = meds_dict[row,2]
+    # case-sensitive imputation of drug names
+    df[[drug.category]] = with(df, ifelse(grepl(drug.names, `Drug Name`), 1, 0))
+  }
+  # replace NA with 0
+  df = df %>%
+    mutate(across(first.drug.category:last.drug.category, ~replace_na(., 0)))
+  return(df)
+}
+
 impute_meds = function(df){
   #' impute medication status in binary 
   #'
@@ -10,21 +78,25 @@ impute_meds = function(df){
     mutate(
       # paxlovid
       paxlovid = ifelse(grepl("PAXLOVID", `Drug Name`), 1, 0),
-      # aspirin
-      aspirin = ifelse(grepl("ASPIRIN|ACETYLSALICYLIC ACID", `Drug Name`), 1, 0),
+      # antiplatelets
+      antiplatelets = ifelse(grepl("ASPIRIN|TICLOPIDINE|CLOPIDOGREL|PRASUGREL|TICAGRELOR|CANGRELOR|ABCIXIMAB|EPTIFIBATIDE|TIROFIBAN|DIPYRIDAMOLE|CILOSTAZOL|WARFARIN|HEPARIN|RIVAROXABAN|DABIGATRAN|APIXABAN|EDOXABAN|ENOXAPARIN|FONDAPARINUX", `Drug Name`), 1, 0),
       # ACE inhibitors
-      ace_inhibitors = ifelse(grepl("BENAZEPRIL|CAPTOPRIL|CLIZAPRIL|ENALAPRIL|ENALAPRILAT|FOSINOPRIL|LISINOPRIL|MOEXIPRIL|PERINDOPRIL|QUINAPRIL|RAMIPRIL|TRANDOLAPRIL", `Drug Name`), 1, 0),
+      ace_inhibitors = ifelse(grepl("BENAZEPRIL|CAPTOPRIL|CLIZAPRIL|ENALAPRIL|ENALAPRILAT|FOSINOPRIL|LISINOPRIL|MOEXIPRIL|PERINDOPRIL|QUINAPRIL|RAMIPRIL|TRANDOLAPRIL|AZILSARTAN|CANDESARTAN|EPROSARTAN|IRBESARTAN|LOSARTAN|OLMESARTAN|TELMISARTAN|VALSARTAN", `Drug Name`), 1, 0),
       # beta blockers
       beta_blockers = ifelse(grepl("ACEBUTALOL|ATENOLOL|BETAXOLOL|BISOPROLOL|CARTEOLOL|CARVEDILOL|ESMOLOL|LABETALOL|LEVOBUNOLOL|METOPROLOL|NADOLOL|NEBIVOLOL|PINDOLOL|PROPANOLOL|SOTALOL|TIMOLOL", `Drug Name`), 1, 0),
       # calcium channel blockers
       calcium_channel_blockers = ifelse(grepl("AMLODIPINE|CLEVIDIPINE|FELODIPINE|FLUNARZINE|ISRADIPINE|LEVAMLODIPINE|NICARDIPINE|NIFEDIPINE", `Drug Name`), 1, 0),
+      # diuretics
+      diuretics = ifelse(grepl("BENDROFLUMETHIAZIDE|CHLOROTHIAZIDE|CHLORTALIDONE|CYCLOPENTHIAZIDE|HYDROCHLOROTHIAZIDE|INDAPAMIDE|METOLAZONE|POLUTHIAZIDE|XIPAMIDE|BUMETANIDE|FUROSEMIDE|LASIX|TORASEMIDE|AMILORIDE|EPLERENONE|SPIRONOLACTONE|TRIAMTERENE|AMILOZIDE|AMILOFRUSE|TRIAMTERZIDE|MANNITOL", `Drug Name`), 1, 0),
       # statins
       statins = ifelse(grepl("ATORVASTATIN|SIMVASTATIN|FLUVASTATIN|LOVASTATIN|PITAVASTATIN|PRAVASTATIN|ROSUVASTATIN", `Drug Name`), 1, 0),
+      # antidiabetics
+      antidiabetics = ifelse(grepl("ANAGLIFLOZIN|DAPAGLIFLOZIN|EMPAGLIFLOZIN|CHLORPROPAMIDE|GLIMEPIRIDE|GLIPIZIDE|GLYBURIDE|TOLAZAMIDE|TOLBUTAMIDE|ROSIGLITAZONE|PIOGLITAZONE|METFORMIN|NATEGLINIDE|REPAGLINIDE|INSULIN|ALBIGLUTIDE|DULAGLUTIDE|EXENATIDE|LIRAGLUTIDE|LIXISENATIDE|PRAMLINTIDE|ALOGLIPTAN|LINAGLIPTAN|SAXAGLIPTIN|SITAGLIPTIN|ACARBOSE|MIGILTOL", `Drug Name`), 1, 0),
       # molnupiravir
-      molnupiravir = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), 1, 0),
+      molnupiravir = ifelse(grepl("MOLNUPIRAVIR", `Drug Name`), 1, 0)
       
     ) %>% 
-    mutate_at(c("paxlovid", "aspirin","ace_inhibitors","beta_blockers","calcium_channel_blockers", "statins","molnupiravir"), ~replace_na(., 0))
+    mutate(across(paxlovid:molnupiravir, ~replace_na(., 0)))
   return(df)
 }
 # severe covid related meds

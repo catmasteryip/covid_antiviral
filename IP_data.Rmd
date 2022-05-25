@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_notebook
+
 ---
 
 # import libraries
@@ -33,7 +33,7 @@ unique(ip$`Drug Name`)[grepl("DEXAMETHASONE", unique(ip$`Drug Name`))]
 # specify icd9 code column index
 diag_cols = 35:49
 
-df_ip = ip %>%
+ip.nodrug = ip %>%
   select(-`Drug Name`) %>%
   distinct() %>%
   # exclude pregnancy
@@ -46,19 +46,82 @@ df_ip = ip %>%
 # identification dataframe of IP patients' first admissions only
 
 ```{r}
-ip_first_by_patient_id = df_ip %>%
+ip.id = ip.nodrug %>%
   select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`, `Discharge Date (yyyy-mm-dd)`) %>%
   group_by(`Reference Key`) %>%
   slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
   ungroup()
 
-writexl::write_xlsx(ip_first_by_patient_id, "./ip_first_admission_id.xlsx")
+writexl::write_xlsx(ip_first_by_patient_id, "./ip.id.xlsx")
+```
+
+
+# comorbs, change to comorbidity package
+
+```{r}
+# specify icd9 code column index
+diag_cols = 35:49
+
+ip.diag = ip.nodrug %>% 
+  select(`HN Number`, diag_cols) %>%
+  impute_comorbs(., diag_cols - 33) 
+
+ip.diag = aggregate(ip.diag, by = list(ip.diag[, "HN Number"]), FUN = "max") %>%
+  select(-Group.1)
+
+ip.charlson = ip.nodrug %>% 
+  select(`HN Number`, diag_cols) %>%
+  # filter(`HN Number` %in% ip_first_by_patient_id$`HN Number`) %>%
+  pivot_longer(cols = diag_cols - 33 , names_to = "diagnosis", values_to = "code") %>%
+  drop_na() %>%
+  group_by(`HN Number`) %>%
+  distinct() %>%
+  ungroup() %>%
+  mutate(id = 1:n())
+
+# CCI
+charlson = comorbidity::comorbidity(x = as.data.frame(ip.charlson), 
+                                   id = "id", 
+                                   code = "code", 
+                                   map = "charlson_icd9_quan", 
+                                   assign0 = F) 
+# charlson comorbs and cci by HN Number
+charlson = charlson %>%
+  left_join(select(charlson_diag, `HN Number`, id))
+charlson = aggregate(charlson, by = list(charlson[, "HN Number"]), FUN = "max") %>%
+  select(-Group.1)
+charlson = charlson %>% 
+  rowwise() %>% 
+  mutate(cci = sum(c_across(mi:aids))) %>%
+  mutate(cci = case_when(
+    cci == 0~ "0",
+    cci < 3~ "1-2",
+    cci < 5~ "3-4",
+    cci >= 5~ "5+",
+    TRUE ~ "0"
+  ))
+cci = charlson %>%
+  select(`HN Number`, cci)
+# writexl::write_xlsx(charlson_diag, path = "./charlson_diag.xlsx")
+
+
+ip.diag = ip.diag %>%
+  left_join(cci, by = "HN Number") %>%
+  # replace_na of ci
+  mutate(cci = ifelse(is.na(cci), "0", cci))
+  # select(-diagnosis, -id, -code)
+  
+unique(ip_diag$cci)
+
+# check if there is any NA, missing data
+ip.diag %>% filter_all((any_vars(is.na(.))))  
+writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
 ```
 
 # medication status of IP epsiodes with IP data only
 
 ```{r}
-ip_drug_use = ip %>%
+ip.drug = ip %>%
   # exclude pregnancy
   mutate(pregnancy = ifelse(if_any(diag_cols, ~between(., "630", "679.99")), T, F),
          pregnancy = ifelse(is.na(pregnancy), F, pregnancy)) %>%
@@ -75,11 +138,11 @@ pres_date = drug_use %>%
   select(`Reference Key`, `Dispensing Date (yyyy-mm-dd)`, `Drug Name`) %>%
   impute_meds()
 
-ip_drug_use = ip_drug_use %>%
+ip.drug = ip.drug %>%
   impute_meds() %>%
   left_join(pres_date) 
 
-ip.paxlovid.daystillpaxlovid = ip_drug_use %>%
+ip.paxlovid.daystillpaxlovid = ip.drug %>%
   filter(paxlovid == 1) %>%
   mutate(daystillpaxlovid = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
            as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
@@ -87,18 +150,13 @@ ip.paxlovid.daystillpaxlovid = ip_drug_use %>%
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
   group_by(`Reference Key`) %>%
   summarise(daystillpaxlovid = min(daystillpaxlovid)) 
-
-ip.paxlovid.daystillpaxlovid %>% count()
-
-ggplot(ip.paxlovid.daystillpaxlovid, aes(x = daystillpaxlovid)) +
-  geom_histogram()
 ```
 
 # medication imputation cont'd
 
 ```{r}
 medIPdf = 
-  ip_drug_use %>%
+  ip.drug %>%
   impute_meds() %>%
   # baricitinib
   impute_meds_severe_covid() %>%
@@ -148,23 +206,31 @@ baricitinibid_shortlist = baricitinib_shortlist %>%
 baricitinib_shortlist = baricitinib_shortlist %>%
   select(`HN Number`, daystillbari)
 baricitinib_shortlist = aggregate(daystillbari~`HN Number`, baricitinib_shortlist, min)
-# ------------------------
-# combine with OP meds status (incomplete)
-# 1. match by reference key &
-# 2. appointment date <= (first) admission date
-medOPdf_shortlist = medOPdf %>%
-  left_join(ip_first_by_patient_id, by = "Reference Key") %>%
-  filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
-  select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
+```
 
-# combine with administration route info on dexamethasone form steroid
-medIPdf_shortlist = medIPdf %>%
-  left_join(ip_first_by_patient_id, by = "HN Number")
+# OP meds status (deprecated, do not delete)
 
-common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist))
-medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
-                     medIPdf_shortlist %>% select(c(common_cols, "baricitinib")))
+```{r}
+# # ------------------------
+# # combine with OP meds status (incomplete)
+# # 1. match by reference key &
+# # 2. appointment date <= (first) admission date
+# medOPdf_shortlist = medOPdf %>%
+#   left_join(ip_first_by_patient_id, by = "Reference Key") %>%
+#   filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+#   select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
+# 
+# # combine with administration route info on dexamethasone form steroid
+# medIPdf_shortlist = medIPdf %>%
+#   left_join(ip_first_by_patient_id, by = "HN Number")
+# 
+# common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist))
+# medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
+#                      medIPdf_shortlist %>% select(c(common_cols, "baricitinib")))
+```
 
+
+```{r}
 # aggregate medIOPdf by reference key
 medIOPdf = medIOPdf %>%
   # as.numeric binary cols
@@ -182,67 +248,7 @@ medIOPdf =
 writexl::write_xlsx(medIOPdf, "./medIOPdf.xlsx")
 ```
 
-# comorbs, change to comorbidity package
 
-```{r}
-# specify icd9 code column index
-diag_cols = 35:49
-
-ip_diag = df_ip %>% 
-  select(`HN Number`, diag_cols) %>%
-  impute_comorbs(., diag_cols - 33) 
-
-ip_diag = aggregate(ip_diag, by = list(ip_diag[, "HN Number"]), FUN = "max") %>%
-  select(-Group.1)
-
-charlson_diag = df_ip %>% 
-  select(`HN Number`, diag_cols) %>%
-  # filter(`HN Number` %in% ip_first_by_patient_id$`HN Number`) %>%
-  pivot_longer(cols = diag_cols - 33 , names_to = "diagnosis", values_to = "code") %>%
-  drop_na() %>%
-  group_by(`HN Number`) %>%
-  distinct() %>%
-  ungroup() %>%
-  mutate(id = 1:n())
-
-# CCI
-charlson = comorbidity::comorbidity(x = as.data.frame(charlson_diag), 
-                                   id = "id", 
-                                   code = "code", 
-                                   map = "charlson_icd9_quan", 
-                                   assign0 = F) 
-# charlson comorbs and cci by HN Number
-charlson = charlson %>%
-  left_join(select(charlson_diag, `HN Number`, id))
-charlson = aggregate(charlson, by = list(charlson[, "HN Number"]), FUN = "max") %>%
-  select(-Group.1)
-charlson = charlson %>% 
-  rowwise() %>% 
-  mutate(cci = sum(c_across(mi:aids))) %>%
-  mutate(cci = case_when(
-    cci == 0~ "0",
-    cci < 3~ "1-2",
-    cci < 5~ "3-4",
-    cci >= 5~ "5+",
-    TRUE ~ "0"
-  ))
-cci = charlson %>%
-  select(`HN Number`, cci)
-# writexl::write_xlsx(charlson_diag, path = "./charlson_diag.xlsx")
-
-
-ip_diag = ip_diag %>%
-  left_join(cci, by = "HN Number") %>%
-  # replace_na of ci
-  mutate(cci = ifelse(is.na(cci), "0", cci))
-  # select(-diagnosis, -id, -code)
-  
-unique(ip_diag$cci)
-
-# check if there is any NA, missing data
-ip_diag %>% filter_all((any_vars(is.na(.))))  
-writexl::write_xlsx(ip_diag, "./ip_diag.xlsx")
-```
 
 
 

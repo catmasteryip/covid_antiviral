@@ -33,12 +33,13 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
 # COVID antiviral use 
 
 ```{r}
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/Antiviral (List of patients & drug use)/
 drug_use = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
 # steroid administration route data
-# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid/
 steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
 # baricitinib 
-# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Interferons & Antibodies
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Interferons & Antibodies/
 antibodies = read_xlsx_from_folder("./data/Wave 5/Antibodies/", "_DRG.xlsx")
 ```
 
@@ -48,29 +49,15 @@ antibodies = read_xlsx_from_folder("./data/Wave 5/Antibodies/", "_DRG.xlsx")
 
 options(warn = -1)
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5
+ip1 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202201/", "_IP.xlsx")
 ip2 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202202/Dx/", "_IP.xlsx")
 ip3 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202203/Dx/", "_IP.xlsx")
-ip = bind_rows(ip2, ip3)
-ip2 = ip3 = NULL
-# filter only wave 5, ie 16th feb - 31st mar
+ip4 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202204/", "_IP.xlsx")
+ip = bind_rows(ip1, ip2, ip3, ip4)
+ip1 = ip2 = ip3 = ip4 = NULL
+# filter only 5th jan - 15th apr
 ip = ip %>% 
-  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16")
-```
-
-# COVID patients OP data
-
-```{r}
-# directory as in onelook drive: ~/COVID Database/Patient-based Record/Designated Clinic
-op_drug = read_xlsx_from_folder("./data/Designated Clinic/drug/", ".xlsx")
-op_drug = op_drug %>%
-  filter(ymd(`Appointment Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Appointment Date (yyyy-mm-dd)`) <= "2022-03-31")
-  
-op = read_xlsx_from_folder("./data/Designated Clinic/no_frills/", ".xlsx")
-op = op %>%
-  filter(ymd(`Appointment Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Appointment Date (yyyy-mm-dd)`) <= "2022-03-31")
-
-# demo IP data
-demo_ip = read_xlsx_from_folder("./data/5th Wave 202202/", "_demo_IP.xlsx")
+  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-01-05")
 ```
 
 # other data (optional)
