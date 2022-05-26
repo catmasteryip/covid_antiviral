@@ -8,7 +8,7 @@ title: "R Notebook"
 ```{r}
 
 ip.iptw = ip.id %>%
-  left_join(ip.sexage) %>% 
+  left_join(ip.sexage) %>%
   filter(!is.na(Sex) | !is.na(age)) %>%
   left_join(ip.drug.all) %>%
   left_join(ip.diag) 

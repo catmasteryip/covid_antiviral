@@ -99,4 +99,39 @@ op_tab1_patient_p
 op_tab1_patient_m = CreateTableOne(data = op_patient, strata = "molnupiravir")
 op_tab1_patient_m
 ```
+# OP meds status (deprecated, do not delete)
 
+```{r}
+# # ------------------------
+# # combine with OP meds status (incomplete)
+# # 1. match by reference key &
+# # 2. appointment date <= (first) admission date
+# medOPdf_shortlist = medOPdf %>%
+#   left_join(ip_first_by_patient_id, by = "Reference Key") %>%
+#   filter(ymd(`Appointment Date (yyyy-mm-dd)`) <= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+#   select(c("Reference Key", "paxlovid", "aspirin", "ace_inhibitors", "beta_blockers", "calcium_channel_blockers", "statins", "molnupiravir"))
+# 
+# # combine with administration route info on dexamethasone form steroid
+# medIPdf_shortlist = medIPdf %>%
+#   left_join(ip_first_by_patient_id, by = "HN Number")
+# 
+# common_cols = intersect(colnames(medOPdf_shortlist), colnames(medIPdf_shortlist))
+# medIOPdf = bind_rows(medOPdf_shortlist %>% select(common_cols), 
+#                      medIPdf_shortlist %>% select(c(common_cols, "baricitinib")))
+
+# # aggregate medIOPdf by reference key
+# medIOPdf = medIOPdf %>%
+#   # as.numeric binary cols
+#   mutate_at(2:length(colnames(medIOPdf)), as.numeric)
+# medIOPdf =
+#   aggregate(medIOPdf, by = list(medIOPdf[, "Reference Key"]), FUN = "max") %>%
+#   select(-Group.1) %>%
+#   # left-join with dexamethasone meds status 
+#   mutate(dexamethasone = ifelse(`Reference Key` %in% dexamethasone_idshortlist$`Reference Key`, 1, 0)) %>%
+#   mutate_at(2:length(colnames(medIOPdf)), ~replace_na(., "0")) %>%
+#   # as.factor binary cols
+#   mutate_at(2:length(colnames(medIOPdf)), factor) 
+#   
+# 
+# writexl::write_xlsx(medIOPdf, "./medIOPdf.xlsx")
+```

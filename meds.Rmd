@@ -244,6 +244,9 @@ ip.drug.all = ip.drug.big.imputed %>%
   full_join(mutate(ip.paxlovid, paxlovid = 1)) %>%
   full_join(mutate(ip.molnupiravir, molnupiravir = 1)) %>%
   select(-matches("^days"))
+
+ip.drug.all = aggregate(ip.drug.all, by = list(ip.drug.all[, "Reference Key"]), FUN = "max") %>%
+  select(-Group.1)
 writexl::write_xlsx(ip.drug.all, path = "./ip.drug.all.xlsx")
 ```
 
