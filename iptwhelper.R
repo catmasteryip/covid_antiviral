@@ -69,20 +69,40 @@ iptw_regression_tidy = function(df,
   return(tidy_reg %>% filter(term != "(Intercept)"))
 }
 
-iptw_hr_tidy = function(df, 
-                        weight, 
-                        outcome, 
+iptw_hr_one_col = function(df, 
+                        x_factors,
+                        event,
+                        daystillevent,
                         treatment){
-  #' IPTW-weighted regression to generate the exponentiated coeff/odds ratio given treatment to outcome
+  #' IPTW-weighted univariate cox regression to generate the exponentiated hazard ratio given treatment to outcome
   #'
-  #' @param df Dataframe. A dataframe that is used for iptw
-  #' @param weight Weightit object/output. which contains the weights and data, and other parameters
-  #' @param outcome c(String). A vector of strings that specifies the event and days till event
+  #' @param df Dataframe. A dataframe that is for iptw and has iptw weight in column called "weight"
+  #' @param x_factors c(String). A vector of strings for category segmentation
+  #' @param event String. String specifying the event column
+  #' @param daystillevent String. String specifying no. of days till event
   #' @param treatment String. A string that specifies the treatment column in df
-  #' @return A DataFrame that contains the exponentiated coeff/odds ratio given treatment to outcome
+  #' @return A DataFrame that contains the exponentiated hazard ratio given treatment to outcome, 
+  #' segmented by each level of each factor in x_factors 
   
-  clus <- svydesign(id =~ 1, weights = weight$weights, data = df)
-  # res <- svyglm(paste0(outcome, " ~ ", treatment), design = clus,family = binomial)
-  tidy_reg = tidy(res, exponentiate = T, conf.int = T, conf.level = .95)
-  return(tidy_reg %>% filter(term != "(Intercept)"))
+  iformula <- as.formula(sprintf("Surv(as.numeric(daystillevent), as.numeric(death28d)) ~ paxlovid"))
+  hr.df = c()
+  
+  for(x in x_factors){
+    
+    hr.df.small = df %>%
+      group_by(!!!syms(x)) %>%
+      do(models = tidy(
+        coxph(formula = iformula, 
+              data = .,
+              weights = weight), 
+        exponentiate = T, conf.int = T, conf.level = .95))%>%
+      unnest(models) %>%
+      mutate(variable = paste0(x, !!!syms(x))) %>%
+      select(-x) %>%
+      relocate(variable, .before = term) %>%
+      select(-term)
+    hr.df = rbind(hr.df, hr.df.small)
+  }
+  
+  hr.df
 }

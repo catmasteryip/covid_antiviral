@@ -53,7 +53,8 @@ ip.iptw.tidy = ip.iptw  %>%
   # replace NA
   mutate(across(!"daystillevent", ~replace_na(., 0)),
          # factorise everything
-         across(!"daystillevent", factor))
+         across(!"daystillevent", factor),
+         weight = weights.p$weights)
 
 ip.iptw.tidy %>% filter(across(everything(), is.na))
 
@@ -68,9 +69,20 @@ result.resp_death = iptw_regression_tidy(df = select(ip.iptw.tidy, x_factors, pa
                      outcome = "resp_death",
                      treatment = "paxlovid")
 
-result.resp_death
+
 ```
 
+# HR
+
+```{r}
+hr.df = c()
+hr.df = iptw_hr_one_col(df = ip.iptw.tidy,
+                x_factors = c("Sex", "age_grp", "sdi_q", "diabetes", "cancer"),
+                event = "death28d",
+                daystillevent = "daystillevent",
+                treatment = "paxlovid")
+hr.df
+```
 
 
 
