@@ -171,6 +171,18 @@ ip.death = ip.death %>%
 writexl::write_xlsx(ip.death, './ip.death.xlsx')
 ```
 
+# SDI
+
+```{r}
+
+ip.sdi = ip.nodrug %>%
+  select(`Reference Key`, district = `District of Residence (system code)`) %>%
+  distinct()%>%
+  left_join(rename(sdi, district = Districtcode)) %>%
+  select(-district, -average_SDI_2)
+writexl::write_xlsx(ip.sdi, path = "./ip.sdi.xlsx")
+```
+
 
 
 

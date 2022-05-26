@@ -92,6 +92,10 @@ death = read_xlsx_from_folder("./data/Death Cause/", ".xlsx")
 death = death %>%
   select(-`No. of Episodes`) %>%
   distinct()
+
+sdi = readxl::read_excel("./SDI_map.xlsx")
+sdi = sdi %>%
+  mutate(sdi_q = cut(average_SDI_2, breaks = quantile(average_SDI_2, probs = seq(0, 1, by = 0.25))))
 ```
 
 
