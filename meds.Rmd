@@ -183,12 +183,14 @@ ip.paxlovid = ip.drug %>%
 ip.paxlovid = ip.paxlovid %>%
   mutate(daystillpaxlovid = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
            as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
-  filter(daystillpaxlovid > 0,
+  filter(daystillpaxlovid >= 0,
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
 
 ip.paxlovid = ip.paxlovid %>%
   filter(daystillpaxlovid <= 4)%>%
   select(`Reference Key`, daystillpaxlovid)
+
+ip.paxlovid = ip.paxlovid %>% distinct()
 
 writexl::write_xlsx(ip.paxlovid, path = "./ip.paxlovid.under5d.xlsx")
 ```
