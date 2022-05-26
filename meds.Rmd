@@ -167,17 +167,21 @@ med_dict_paxlovid = tribble(
   "paxlovid", "PAXLOVID"
 )
 
+# refer to data_import.Rmd for antiviral obj.
 pres_date = antiviral %>% 
   select(`Reference Key`, `Dispensing Date (yyyy-mm-dd)`, `Drug Name`)
 
+# refer to IP_data.Rmd for ip.drug obj.
 ip.paxlovid = ip.drug %>%
   impute_meds_w_dict(., as.data.frame(med_dict_paxlovid)) %>%
   filter(paxlovid == 1) %>%
   left_join(pres_date)  %>% 
-  # get earliest dispension of antiviral by reference key
+  # by reference key,
   group_by(`Reference Key`) %>%
-  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`)),
-        which.min(ymd(`Dispensing Date (yyyy-mm-dd)`))) %>%
+  # ... get earliest admission
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  # ... get earliest dispension of antiviral
+  slice(which.min(ymd(`Dispensing Date (yyyy-mm-dd)`))) %>%
   ungroup()
 
 ip.paxlovid = ip.paxlovid %>%
@@ -206,22 +210,28 @@ med_dict_molnupiravir = tribble(
 
 ip.molnupiravir = ip.drug %>%
   impute_meds_w_dict(., as.data.frame(med_dict_molnupiravir)) %>%
-  left_join(pres_date) 
-
-ip.molnupiravir = ip.molnupiravir %>%
   filter(molnupiravir == 1) %>%
-  mutate(daystillmolnupiravir = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
-           as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
-  filter(daystillmolnupiravir > 0,
-         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
-  # get earliest dispension of antiviral by reference key
+  left_join(pres_date)  %>% 
+  # by reference key,
   group_by(`Reference Key`) %>%
+  # ... get earliest admission
   slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  # ... get earliest dispension of antiviral
+  slice(which.min(ymd(`Dispensing Date (yyyy-mm-dd)`))) %>%
   ungroup()
 
 ip.molnupiravir = ip.molnupiravir %>%
-  filter(daystillmolnupiravir <= 4) %>%
+  mutate(daystillmolnupiravir = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
+           as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
+  filter(daystillmolnupiravir >= 0,
+         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
+
+ip.molnupiravir = ip.molnupiravir %>%
+  filter(daystillmolnupiravir <= 4)%>%
   select(`Reference Key`, daystillmolnupiravir)
+
+ip.molnupiravir = ip.molnupiravir %>% distinct()
+
 writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.under5d.xlsx")
 ```
 
