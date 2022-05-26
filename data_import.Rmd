@@ -89,6 +89,9 @@ ip = ip %>%
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/
 # two separate death cause folders
 death = read_xlsx_from_folder("./data/Death Cause/", ".xlsx")
+death = death %>%
+  select(-`No. of Episodes`) %>%
+  distinct()
 ```
 
 

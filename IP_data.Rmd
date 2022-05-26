@@ -179,6 +179,8 @@ writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
 
 # impute 28d death
 ip.death = ip.id %>%
+  left_join(select(ip.nodrug, `HN Number`, `Admission Date (yyyy-mm-dd)`,
+                   `Discharge Date (yyyy-mm-dd)`, `Discharge Status`)) %>%
   left_join(death) %>%
   mutate(death28d = case_when(
     `Discharge Status`=="DEATH" & 
@@ -188,13 +190,21 @@ ip.death = ip.id %>%
       is.na(`Discharge Status`)~0,
       TRUE~0
     ),
-     daystilldeath = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
+     daystillevent = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
      # right-censor
-     daystilldeath = ifelse(daystilldeath > 28 & death28d == 0, 28, daystilldeath),
-     death28d = ifelse(daystilldeath > 28 & death28d == 1, 0, death28d), 
-     # replace na with 28
-     daystilldeath = ifelse(is.na(daystilldeath), 28, daystilldeath),
-     resp_death = )
+     daystillevent = ifelse(daystillevent > 28 & death28d == 0, 28, daystillevent),
+     death28d = ifelse(daystillevent > 28 & death28d == 1, 0, death28d), 
+     # replace na, ie discharged, with 28
+     daystillevent = ifelse(is.na(daystillevent), 28, daystillevent),
+     resp_death = ifelse(grepl("^J|^U071",`Death Cause (Main Cause)`), 1, 0)
+    )
+
+# ip.death %>% count(`Reference Key`) %>% count(n)
+
+ip.death = ip.death %>%
+  select(`Reference Key`, death28d, daystillevent, resp_death)
+
+
 # colnames(ip_death_los)
 writexl::write_xlsx(ip.death, './ip.death.xlsx')
 ```
