@@ -1,45 +1,46 @@
 ---
 title: "R Notebook"
-output: html_notebook
+
 ---
 
 # propensity and IPTW by weightit
 
 ```{r}
-# as.factor cateogorical cols and left_join ip_death_los data
-ip_propensity = ip_tab1_df  %>%
-  select(-age) %>%
-  # left-join death data
-  left_join(select(ip_death_los, `HN Number`, death28d)) %>%
-  mutate(across(2:length(colnames(ip_tab1_df)), factor)) %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`)  %>%
-  # replace comorbs, meds stats and death28d cols NA with 0
-  mutate(across(c(diabetes:dexamethasone, death28d), ~replace_na(., 0))) %>%
-  # drop sex NA
-  drop_na() 
-  
+
+ip.iptw = ip.id %>%
+  left_join(ip.sexage) %>% 
+  filter(!is.na(Sex) | !is.na(age)) %>%
+  left_join(ip.drug.all) %>%
+  left_join(ip.diag) 
+  # as.factor cateogorical cols
+x_factors = colnames(ip.iptw)
+x_factors = x_factors[!x_factors %in% c("Reference Key","HN Number",
+                                        "Admission Date (yyyy-mm-dd)","Discharge Date (yyyy-mm-dd)",
+                                        "age","paxlovid","molnupiravir", "dexamethasone", "baricitinib", "parkinsons")]
+trt_factors = c("paxlovid","molnupiravir")
+ip.iptw = ip.iptw %>%
+  mutate(across(c(x_factors, trt_factors), ~replace_na(., 0))) %>%
+  mutate(across(c(x_factors, trt_factors), factor))
 
 # check if there is any NA, missing data
-ip_propensity %>% filter_all((any_vars(is.na(.))))
+ip.iptw %>% filter(across(c(x_factors, trt_factors), is.na))
 # write to xlsx
 # writexl::write_xlsx(ip_propensity, path = "./ps_analysis_v5.xlsx")
 
-ip_propensity = ip_propensity %>%
-  select(-dexamethasone, -baricitinib)
-ip_tab1_p = CreateTableOne(data = ip_propensity, strata = "paxlovid", test = F)
-# print(ip_tab1_p)
+ip.tab1.p = CreateTableOne(data = select(ip.iptw, x_factors, paxlovid), strata = "paxlovid", test = F)
+print(ip.tab1.p, smd = T)
 
-ip_tab1_p_Mat <- print(ip_tab1_p, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
-ip_tab1_p_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_p_Mat),ip_tab1_p_Mat))
+# ip.tab1.p.Mat <- print(ip.tab1.p, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
+# ip.tab1.p.Mat = as.data.frame(cbind(" " = rownames(ip.tab1.p.Mat),ip.tab1.p.Mat))
 ## Save to a xlsx
-writexl::write_xlsx(ip_tab1_p_Mat, path = "./tableonep.xlsx")
-
-ip_tab1_m = CreateTableOne(data = ip_propensity, strata = "molnupiravir", test = F)
-# print(ip_tab1_m, smd = T)
-ip_tab1_m_Mat <- print(ip_tab1_m, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
-ip_tab1_m_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_m_Mat),ip_tab1_m_Mat))
-## Save to a xlsx
-writexl::write_xlsx(ip_tab1_m_Mat, path = "./tableone_m.xlsx")
+# writexl::write_xlsx(ip_tab1_p_Mat, path = "./ip.tab1.p.xlsx")
+# 
+ip.tab1.m = CreateTableOne(data = select(ip.iptw, x_factors, molnupiravir), strata = "molnupiravir", test = F)
+print(ip.tab1.m, smd = T)
+# ip_tab1_m_Mat <- print(ip_tab1_m, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
+# ip_tab1_m_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_m_Mat),ip_tab1_m_Mat))
+# ## Save to a xlsx
+# writexl::write_xlsx(ip_tab1_m_Mat, path = "./tableone_m.xlsx")
 ```
 
 # propensity iptw paxvlovid, ATT

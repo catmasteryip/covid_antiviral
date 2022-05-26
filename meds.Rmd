@@ -172,18 +172,19 @@ pres_date = antiviral %>%
 
 ip.paxlovid = ip.drug %>%
   impute_meds_w_dict(., as.data.frame(med_dict_paxlovid)) %>%
-  left_join(pres_date) 
+  filter(paxlovid == 1) %>%
+  left_join(pres_date)  %>% 
+  # get earliest dispension of antiviral by reference key
+  group_by(`Reference Key`) %>%
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`)),
+        which.min(ymd(`Dispensing Date (yyyy-mm-dd)`))) %>%
+  ungroup()
 
 ip.paxlovid = ip.paxlovid %>%
-  filter(paxlovid == 1) %>%
   mutate(daystillpaxlovid = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
            as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
   filter(daystillpaxlovid > 0,
-         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`)) %>% 
-  # get earliest dispension of antiviral by reference key
-  group_by(`Reference Key`) %>%
-  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
-  ungroup()
+         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
 
 ip.paxlovid = ip.paxlovid %>%
   filter(daystillpaxlovid <= 4)%>%
@@ -225,7 +226,7 @@ writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.under5d.xlsx")
 # combine all medication status
 
 ```{r}
-ip.drug.all = ip.drug.imputed %>%
+ip.drug.all = ip.drug.big.imputed %>%
   full_join(mutate(dexamethasone_shortlist, dexamethasone = 1)) %>%
   full_join(mutate(baricitinib_shortlist, baricitinib = 1)) %>%
   full_join(mutate(ip.paxlovid, paxlovid = 1)) %>%

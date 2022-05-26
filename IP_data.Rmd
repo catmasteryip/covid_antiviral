@@ -56,6 +56,23 @@ ip.id = ip.nodrug %>%
 writexl::write_xlsx(ip_first_by_patient_id, "./ip.id.xlsx")
 ```
 
+# ip.sexage
+
+```{r}
+ip.sexage = ip.nodrug %>%
+  select(`Reference Key`, `HN Number`, Sex, age = `Admission Age (Year) (episode based)`) %>%
+  # remove NA in age, no NA in sex
+  filter(!is.na(age)) %>%
+  mutate(age = as.numeric(age),
+         age_grp = cut(age, breaks = c(0, 65, 75, Inf))) %>%
+  group_by(`Reference Key`) %>%
+  # get min age
+  slice(which.min(age)) %>%
+  ungroup()
+
+writexl::write_xlsx(ip.sexage, path = "./ip.sexage.xlsx")
+```
+
 # comorbs, change to comorbidity package (ip.diag)
 
 ```{r}
@@ -155,87 +172,14 @@ writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
 # writexl::write_xlsx(medIOPdf, "./medIOPdf.xlsx")
 ```
 
-# IP data joins
-
-# table 1 descriptive/SMD
-
-```{r}
-# hhttps://cran.r-project.org/web/packages/tableone/vignettes/smd.html#:~:text=The%20standardized%20(mean)%20difference%20is,and%20after%20propensity%20score%20matching.
-
-ip_tab1_df = df_ip %>%
-  mutate(`Admission Age (Year) (episode based)` = as.numeric(`Admission Age (Year) (episode based)`),
-         ) %>%
-  select(`Reference Key`, `HN Number`,`Admission Date (yyyy-mm-dd)`,
-         `Admission Age (Year) (episode based)`, Sex) %>%
-  # first admissions only
-  filter(`HN Number` %in% ip_first_by_patient_id$`HN Number`) %>%
-  # left_join ip_diag to df_ip by HN Number
-  left_join(ip_diag, by = "HN Number") %>%
-  # left join IOP meds status 
-  left_join(medIOPdf, by = "Reference Key") %>%
-  # filter out sex and age NA
-  filter(!is.na(Sex), !is.na(`Admission Age (Year) (episode based)`)) %>%
-  # impute age groups
-  mutate(
-    age = as.numeric(`Admission Age (Year) (episode based)`),
-    age_group = 1,
-    age_group = case_when( 
-      age < 65 ~ "under65",
-      (age >= 65 & age < 75) ~ "65-74",
-      age >= 75~"over74",
-      TRUE ~ as.character(age_group)
-    )) %>%
-  select(-`Admission Age (Year) (episode based)`)
-
-# # optional, left join IP meds data only 
-# ip_tab1_df = ip_tab1_df %>%
-#   left_join(medIPdf_shortlist)
-
-# # check if there is any NA, missing data
-# ip_tab1_df %>% filter_all((any_vars(is.na(.))))  
-
-# write excel by patient data
-writexl::write_xlsx(ip_tab1_dfholder, path = "./ip_df.xlsx")
-```
-
-
-
-```{r}
-
-ip_tab1_dfholder = ip_tab1_df %>%
-  select(-`Reference Key`, -`HN Number`, -`Admission Date (yyyy-mm-dd)`) %>%
-  # replace na of comorbs cols
-  mutate_at(2:(length(colnames(.))-2), ~replace_na(., 0)) %>%
-  # remove NA in sex and age
-  drop_na() %>%
-  # numeric binary to factor cateogorical cols
-  mutate(across(!age, factor)) %>%
-  select(-age)
-  
-
-# check if there is any NA, missing data
-ip_tab1_dfholder %>% filter_all((any_vars(is.na(.))))  
-
-
-```
-
 # 28d mortality and length of stay
+# respiratory mortality: ICD-10 code J00-J99, and U071
 
 ```{r}
-# subselect relevant cols
-ip_death_los = df_ip %>%
-  select(
-         # keys
-         `Reference Key`, `HN Number`, 
-         # death information, death if discharge status == death, discharge date becomes death date
-         `Admission Date (yyyy-mm-dd)`, `Discharge Date (yyyy-mm-dd)`,  `Discharge Status`, 
-         # length of stay LOS in days
-         `Length of Stay`
-         ) %>%
-  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-16" & ymd(`Admission Date (yyyy-mm-dd)`) <= "2022-03-31")  
 
 # impute 28d death
-ip_death_los = ip_death_los %>%
+ip.death = ip.id %>%
+  left_join(death) %>%
   mutate(death28d = case_when(
     `Discharge Status`=="DEATH" & 
       ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`) <= 28 &
@@ -249,9 +193,10 @@ ip_death_los = ip_death_los %>%
      daystilldeath = ifelse(daystilldeath > 28 & death28d == 0, 28, daystilldeath),
      death28d = ifelse(daystilldeath > 28 & death28d == 1, 0, death28d), 
      # replace na with 28
-     daystilldeath = ifelse(is.na(daystilldeath), 28, daystilldeath))
+     daystilldeath = ifelse(is.na(daystilldeath), 28, daystilldeath),
+     resp_death = )
 # colnames(ip_death_los)
-writexl::write_xlsx(ip_death_los, './ip_death_los.xlsx')
+writexl::write_xlsx(ip.death, './ip.death.xlsx')
 ```
 
 

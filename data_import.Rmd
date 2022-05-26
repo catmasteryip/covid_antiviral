@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_notebook
+
 ---
 
 # import libraries
@@ -50,15 +50,15 @@ antibodies = read_xlsx_from_folder("./data/Wave 5/Antibodies/", "_DRG.xlsx")
 
 ```{r}
 # need filter by drug names
-antiplatelet = read_xlsx_from_folder("./data/Drugs/CVS - Antiplatelet & Coagulants/", "Dx")
+antiplatelet = read_xlsx_from_folder("./data/Drugs/CVS - Antiplatelet  & Coagulants/", "Dx")
 ace_inhibitor = read_xlsx_from_folder("./data/Drugs/CVS - Renin-Angiotensin/", "Dx")
 beta_blocker = read_xlsx_from_folder("./data/Drugs/CVS - Beta-blocker/", "Dx")
 calcium_channel_blockers = read_xlsx_from_folder("./data/Drugs/CVS - Calcium-channel Blocker (tbc)/", "Dx")
 diuretics = read_xlsx_from_folder("./data/Drugs/CVS - Diuretics/", "Dx")
 statins = read_xlsx_from_folder("./data/Drugs/CVS - Lipid (tbc)/", "Dx")
 system_corticosteroid = read_xlsx_from_folder("./data/Drugs/Endocrine - Corticosteroids/", "Dx")
-antidiabetics = read_xlsx_from_folder("./data/Drugs/Endorcrine - Diabetes/", "Dx")
-rheumatoids = read_xlsx_from_folder("./data/Wave 5/Rheumatology/", "Dx")
+antidiabetics = read_xlsx_from_folder("./data/Drugs/Endocrine - Diabetes/", "Dx")
+rheumatoids = read_xlsx_from_folder("./data/Drugs/Rheumatology/", "Dx")
 
 # no need filter by drug names
 broncodilators = read_xlsx_from_folder("./data/Wave 5/Respiratory - bronchodilators/", "Dx")
@@ -75,7 +75,7 @@ cancer = read_xlsx_from_folder("./data/Wave 5/Malignancy/", "Dx")
 ```{r}
 
 options(warn = -1)
-# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/
 ip1 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202201/", "_IP.xlsx")
 ip2 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202202/Dx/", "_IP.xlsx")
 ip3 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202203/Dx/", "_IP.xlsx")
@@ -85,6 +85,10 @@ ip1 = ip2 = ip3 = ip4 = NULL
 # filter only 5th jan - 15th apr
 ip = ip %>% 
   filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-01-05")
+
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/
+# two separate death cause folders
+death = read_xlsx_from_folder("./data/Death Cause/", ".xlsx")
 ```
 
 
