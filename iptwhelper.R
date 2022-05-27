@@ -8,6 +8,7 @@ library(broom)
 iptw_tableone = function(df, 
                          treatment, 
                          x_factors, 
+                         x_factors_tableone,
                          path_of_unweighted_tableone,
                          path_of_weighted_tableone){
   #' IPTW and table one generation (unweighted and weighted), save to 
@@ -15,6 +16,7 @@ iptw_tableone = function(df,
   #' @param df Dataframe. A dataframe that contains the treatment and x_factors
   #' @param treatment string. A string that specifies the treatment column
   #' @param x_factors c(string). A vector of strings that specfiy the covariate columns passed to IPTW
+  #' @param x_factors_tableone c(string). A vector of strings that specify the variable columns shown on table one
   #' @param path_of_unweighted_tableone string. 
   # A string that specifies the path to save unweighted table one in .xlsx
   #' @param path_of_weighted_tableone string. 
@@ -29,7 +31,8 @@ iptw_tableone = function(df,
   eval(parse(text = function_call))
   
   # unweighted table one
-  tab1_unweighted = CreateTableOne(data = select(df, c(treatment, x_factors)), 
+  tab1_unweighted = CreateTableOne(vars = x_factors_tableone,
+                                   data = df, 
                                    strata = treatment, 
                                    test = F)
   
@@ -40,7 +43,11 @@ iptw_tableone = function(df,
   writexl::write_xlsx(tab1_unweighted_Mat, path = path_of_unweighted_tableone)
   
   # IPTW-ed table one
-  tab1_weighted = svyCreateTableOne(data = clus, strata = treatment, 
+  clus <- svydesign(ids = ~ 1, 
+                    weights = ~ weight$weights,
+                    data = select(df, c(treatment, x_factors_tableone)))
+  tab1_weighted = svyCreateTableOne(data = clus, 
+                                    strata = treatment, 
                                     test = F)
   tab1_weighted_Mat <- print(tab1_weighted, quote = FALSE, 
                              noSpaces = TRUE, printToggle = FALSE, smd = T)
@@ -69,7 +76,7 @@ iptw_regression_tidy = function(df,
   return(tidy_reg %>% filter(term != "(Intercept)"))
 }
 
-iptw_hr_one_col = function(df, 
+iptw_hr_tidy = function(df, 
                         x_factors,
                         event,
                         daystillevent,
@@ -84,7 +91,7 @@ iptw_hr_one_col = function(df,
   #' @return A DataFrame that contains the exponentiated hazard ratio given treatment to outcome, 
   #' segmented by each level of each factor in x_factors 
   
-  iformula <- as.formula(sprintf("Surv(as.numeric(daystillevent), as.numeric(death28d)) ~ paxlovid"))
+  iformula <- as.formula(paste("Surv(as.numeric(daystillevent), as.numeric(", event,")) ~ ", treatment, collapse = ''))
   hr.df = c()
   
   for(x in x_factors){
@@ -97,9 +104,9 @@ iptw_hr_one_col = function(df,
               weights = weight), 
         exponentiate = T, conf.int = T, conf.level = .95))%>%
       unnest(models) %>%
-      mutate(variable = paste0(x, !!!syms(x))) %>%
+      mutate(segment = paste0(x, !!!syms(x))) %>%
       select(-x) %>%
-      relocate(variable, .before = term) %>%
+      relocate(segment, .before = term) %>%
       select(-term)
     hr.df = rbind(hr.df, hr.df.small)
   }

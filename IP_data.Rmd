@@ -60,11 +60,12 @@ writexl::write_xlsx(ip_first_by_patient_id, "./ip.id.xlsx")
 
 ```{r}
 ip.sexage = ip.nodrug %>%
-  select(`Reference Key`, `HN Number`, Sex, age = `Admission Age (Year) (episode based)`) %>%
+  select(`Reference Key`, Sex, age = `Admission Age (Year) (episode based)`) %>%
   # remove NA in age, no NA in sex
   filter(!is.na(age)) %>%
   mutate(age = as.numeric(age),
-         age_grp = cut(age, breaks = c(0, 65, 75, Inf))) %>%
+         age_grp3 = cut(age, breaks = c(0, 65, 75, Inf)),
+         age_grp5 = cut(age, breaks = c(0, 60, 65, 70, 75, 80, Inf))) %>%
   group_by(`Reference Key`) %>%
   # get min age
   slice(which.min(age)) %>%
@@ -177,12 +178,52 @@ writexl::write_xlsx(ip.death, './ip.death.xlsx')
 
 ip.sdi = ip.nodrug %>%
   select(`Reference Key`, district = `District of Residence (system code)`) %>%
-  distinct()%>%
+  group_by(`Reference Key`) %>%
+  slice(which(district == first(district))) %>%
+  ungroup() %>%
+  distinct() %>%
   left_join(rename(sdi, district = Districtcode)) %>%
-  select(-district, -average_SDI_2)
+  select(-average_SDI_2)
+
 writexl::write_xlsx(ip.sdi, path = "./ip.sdi.xlsx")
 ```
 
 
+```{r}
+ip.iptw.holder = ip.id %>%
+  left_join(ip.sexage) %>%
+  filter(!is.na(Sex) | !is.na(age)) %>%
+  left_join(ip.sdi) %>%
+  filter(!is.na(sdi_q))
+
+ip.iptw.holder %>% nrow()
+
+ip.iptw.holder %>% 
+  left_join(ip.paxlovid) %>% 
+  mutate(paxlovidlong = ifelse(!is.na(daystillpaxlovid), 1, 0),
+         paxlovidshort = ifelse(daystillpaxlovid <= 4, 1, 0)) %>%
+  
+  left_join(ip.molnupiravir) %>%
+  mutate(molnupiravirlong = ifelse(!is.na(daystillmolnupiravir), 1, 0),
+         molnupiravirshort = ifelse(daystillmolnupiravir <= 4, 1, 0)) %>%
+  filter(molnupiravirlong == 1) %>%
+  # count(paxlovidlong) %>%
+  filter(paxlovidlong != 1) %>%
+  count(molnupiravirshort)
+  # nrow()
+  
+
+
+ip.id %>% 
+  left_join(ip.paxlovid) %>% 
+  filter(is.na(daystillpaxlovid) | !(daystillpaxlovid > 4)) %>%
+  mutate(paxlovid = ifelse(daystillpaxlovid <= 4, 1, 0)) %>%
+  left_join(ip.molnupiravir) %>%
+  filter(is.na(daystillmolnupiravir) | !(daystillmolnupiravir > 4)) %>%
+  mutate(molnupiravir = ifelse(daystillmolnupiravir <= 4, 1, 0)) %>%
+  
+  # mutate(across(c("paxlovid", "molnupiravir"), ~replace_na(., 0))) %>%
+  count(paxlovid, molnupiravir)
+```
 
 

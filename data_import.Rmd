@@ -95,7 +95,7 @@ death = death %>%
 
 sdi = readxl::read_excel("./SDI_map.xlsx")
 sdi = sdi %>%
-  mutate(sdi_q = cut(average_SDI_2, breaks = quantile(average_SDI_2, probs = seq(0, 1, by = 0.25))))
+  mutate(sdi_q = cut(average_SDI_2, breaks = quantile(average_SDI_2), include.lowest = T))
 ```
 
 

@@ -3,87 +3,212 @@ title: "R Notebook"
 
 ---
 
+# import libraries
+
+```{r}
+library(forestplot)
+library(ggfortify)
+```
+
 # propensity and IPTW by weightit
 
 ```{r}
-
 ip.iptw = ip.id %>%
   left_join(ip.sexage) %>%
   filter(!is.na(Sex) | !is.na(age)) %>%
   left_join(ip.sdi) %>%
+  filter(!is.na(sdi_q)) %>%
   left_join(ip.drug.all) %>%
-  left_join(ip.diag) 
-  # as.factor cateogorical cols
-x_factors = colnames(ip.iptw)
-x_factors = x_factors[!x_factors %in% c("Reference Key","HN Number",
+  left_join(ip.diag)
+
+ip.iptw = ip.iptw %>% 
+  # left join paxlovid
+  left_join(ip.paxlovid) %>% 
+  # impute paxlovid without 4d rule
+  # impute paxlovid with 4d rule
+  mutate(paxlovidlong = ifelse(!is.na(daystillpaxlovid), 1, 0),
+         paxlovidshort = ifelse(daystillpaxlovid <= 4, 1, 0)) %>%
+  # left join molnupiravir
+  left_join(ip.molnupiravir) %>%
+  # impute molnupiravir without 4d rule
+  # impute molnupiravir with 4d rule
+  mutate(molnupiravirlong = ifelse(!is.na(daystillmolnupiravir), 1, 0),
+         molnupiravirshort = ifelse(daystillmolnupiravir <= 4, 1, 0)) 
+
+# subset factors
+x_factors_tableone = colnames(ip.iptw)
+x_factors_tableone = x_factors_tableone[!x_factors_tableone %in% c("Reference Key","HN Number",
                                         "Admission Date (yyyy-mm-dd)","Discharge Date (yyyy-mm-dd)",
-                                        "age","paxlovid","molnupiravir", "dexamethasone", "baricitinib", "parkinsons")]
-trt_factors = c("paxlovid","molnupiravir")
+                                        "age_grp5", "dexamethasone", "baricitinib", "parkinsons", "district")]
+x_factors_tableone = x_factors_tableone[!grepl("paxlovid|molnupiravir", x_factors_tableone)]
+x_factors = x_factors_tableone[x_factors_tableone != "age"]
+
+# trt_factors = c("paxlovid","molnupiravir")
+
+# # check if there is any NA, missing data
+# ip.iptw %>% filter(across(c("Sex"), is.na))
+
 ip.iptw = ip.iptw %>%
-  mutate(across(c(x_factors, trt_factors), ~replace_na(., 0))) %>%
-  mutate(across(c(x_factors, trt_factors), factor))
+  mutate(across(c(x_factors), ~replace_na(., 0)),
+         across(c(x_factors) & !"age", factor)) 
 
 # check if there is any NA, missing data
-ip.iptw %>% filter(across(c(x_factors, trt_factors), is.na))
-# write to xlsx
-# writexl::write_xlsx(ip_propensity, path = "./ps_analysis_v5.xlsx")
-
-ip.tab1.p = CreateTableOne(data = select(ip.iptw, x_factors, paxlovid), strata = "paxlovid", test = F)
-print(ip.tab1.p, smd = T)
-
-# ip.tab1.p.Mat <- print(ip.tab1.p, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
-# ip.tab1.p.Mat = as.data.frame(cbind(" " = rownames(ip.tab1.p.Mat),ip.tab1.p.Mat))
-## Save to a xlsx
-# writexl::write_xlsx(ip_tab1_p_Mat, path = "./ip.tab1.p.xlsx")
-# 
-ip.tab1.m = CreateTableOne(data = select(ip.iptw, x_factors, molnupiravir), strata = "molnupiravir", test = F)
-print(ip.tab1.m, smd = T)
-# ip_tab1_m_Mat <- print(ip_tab1_m, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, smd = T)
-# ip_tab1_m_Mat = as.data.frame(cbind(" " = rownames(ip_tab1_m_Mat),ip_tab1_m_Mat))
-# ## Save to a xlsx
-# writexl::write_xlsx(ip_tab1_m_Mat, path = "./tableone_m.xlsx")
+ip.iptw %>% filter(across(x_factors, is.na))
 ```
 
-# iptw paxvlovid, ATT, odds ratio
+# 2 cohorts
 
 ```{r}
-ip.iptw.tidy = ip.iptw  %>%
-  select(`Reference Key`, x_factors, paxlovid) %>%
-  left_join(ip.death) %>%
-  # replace NA
-  mutate(across(!"daystillevent", ~replace_na(., 0)),
-         # factorise everything
-         across(!"daystillevent", factor),
-         weight = weights.p$weights)
+ip.iptw.p = ip.iptw %>%
+  # remove all molnupiravir
+  filter(molnupiravirlong != 1) %>%
+  # remove all taken paxlovid only after 4d since admission
+  filter(!(paxlovidlong == 1 & paxlovidshort != 1)) %>%
+  mutate(paxlovid = ifelse(is.na(paxlovidshort), 0, 1)) %>%
+  select(-contains("long"), -contains("short"), -contains("days"))
 
-ip.iptw.tidy %>% filter(across(everything(), is.na))
+ip.iptw.m = ip.iptw %>%
+  # remove all paxlovid
+  filter(paxlovidlong != 1) %>%
+  # remove all taken molnupiravir only after 4d since admission
+  filter(!(molnupiravirlong == 1 & molnupiravirshort != 1))%>%
+  mutate(molnupiravir = ifelse(is.na(molnupiravirshort), 0, 1))%>%
+  select(-contains("long"), -contains("short"), -contains("days"))
 
-weights.p = iptw_tableone(df = select(ip.iptw.tidy, x_factors, paxlovid), 
+# optional
+# -----------
+ip.tab1.p = CreateTableOne(vars = x_factors_tableone,
+                           data = ip.iptw.p, 
+                           strata = "paxlovid", test = F)
+print(ip.tab1.p, smd = T)
+
+
+ip.tab1.m = CreateTableOne(vars = x_factors_tableone,
+                           data = ip.iptw.m, 
+                           strata = "molnupiravir", test = F)
+print(ip.tab1.m, smd = T)
+
+# ip.tab1.death = CreateTableOne(data = ip.iptw %>%
+#                                  left_join(ip.death) %>%
+#                                  
+#                              filter(!(paxlovid == 1 & molnupiravir == 1)) %>%
+#                              select(x_factors, molnupiravir, paxlovid, death28d), 
+#                            strata = "death28d", test = F)
+# print(ip.tab1.death, smd = T)
+
+```
+
+# iptw paxvlovid, ATT
+
+```{r}
+# paxlovid (deprecated)
+# --------------------
+# ip.iptw.p = ip.iptw.p  %>%
+#   # select(`Reference Key`, x_factors, molnupiravir, paxlovid) %>%
+#   left_join(ip.death, by = 'Reference Key') %>%
+#   # replace NA
+#   mutate(across(!"daystillevent", ~replace_na(., 0)),
+#          # factorise everything
+#          across(!"daystillevent" & !"age", factor)) %>%
+#   filter(molnupiravir != 1)
+# 
+# ip.iptw.p %>% filter(across(everything(), is.na))
+# --------------------
+
+weights.p = iptw_tableone(df = ip.iptw.p, 
               treatment = "paxlovid",
               x_factors = x_factors,
+              x_factors_tableone = x_factors_tableone,
               path_of_unweighted_tableone = "./p.unweighted.tableone.xlsx",
               path_of_weighted_tableone = "./p.weighted.tableone.xlsx")
 
-result.resp_death = iptw_regression_tidy(df = select(ip.iptw.tidy, x_factors, paxlovid, resp_death), 
-                     weight = weights.p, 
-                     outcome = "resp_death",
-                     treatment = "paxlovid")
+ip.iptw.p = ip.iptw.p %>%
+  mutate(weight = weights.p$weights)
 
-
+writexl::write_xlsx(ip.iptw.p, "./ip.iptw.p.nooutcome.xlsx")
 ```
 
-# HR
 
 ```{r}
-hr.df = c()
-hr.df = iptw_hr_one_col(df = ip.iptw.tidy,
-                x_factors = c("Sex", "age_grp", "sdi_q", "diabetes", "cancer"),
-                event = "death28d",
-                daystillevent = "daystillevent",
-                treatment = "paxlovid")
-hr.df
+# molnupiravir (deprecated)
+# --------------------
+# 
+# ip.iptw.m %>% filter(across(everything(), is.na))
+# --------------------
+
+weights.m = iptw_tableone(df = ip.iptw.m, 
+              treatment = "molnupiravir",
+              x_factors = x_factors,
+              x_factors_tableone = x_factors_tableone,
+              path_of_unweighted_tableone = "./m.unweighted.tableone.xlsx",
+              path_of_weighted_tableone = "./m.weighted.tableone.xlsx")
+
+ip.iptw.m = ip.iptw.m %>%
+  mutate(weight = weights.m$weights)
 ```
 
+# HR mortality
+
+
+```{r}
+x_factors_hr = c("Sex", "age_grp5", "sdi_q", "diabetes", "cancer")
+# x_factors_hr2 = c("Sex", "age_grp3", "sdi_q", "diabetes", "cancer")
+```
+
+# paxlovid
+
+```{r}
+ip.iptw.p.mortality = ip.iptw.p  %>%
+  left_join(ip.death, by = 'Reference Key') %>%
+  # replace NA
+  mutate(across(!"daystillevent", ~replace_na(., 0)),
+         # factorise everything
+         across(!"daystillevent" & !"age" & !"weight", factor))
+
+writexl::write_xlsx(ip.iptw.p.mortality, "./ip.iptw.p.mortality.xlsx")
+
+for(event in c("death28d", "resp_death")){
+  hr.death = c()
+  hr.death = iptw_hr_tidy(df = ip.iptw.p,
+                          x_factors = x_factors_hr,
+                          event = event,
+                          daystillevent = "daystillevent",
+                          treatment = "paxlovid")
+  hr.death
+  writexl::write_xlsx(hr.death, path = paste0("./hr.", event, ".agr_grp5.p.xlsx"))
+}
+```
+
+# KM approx
+
+```{r}
+# km_fit <- survfit(Surv(daystillevent, as.factor(death28d)) ~ paxlovid, 
+#                   data=ip.iptw.p)
+# summary(km_fit)
+# autoplot(km_fit)
+# saveRDS(km_fit, "./km_fit.rds")
+# fit <- coxph(id~1, 
+#              Surv(daystillevent, as.factor(death28d)) ~ as.factor(paxlovid), 
+#              data=ip.iptw.p)
+# plot( survfit( fit))
+
+
+```
+
+# molnupiravir
+
+```{r}
+for(event in c("death28d", "resp_death")){
+  hr.death = c()
+  hr.death = iptw_hr_tidy(df = ip.iptw.m,
+                          x_factors = x_factors_hr,
+                          event = event,
+                          daystillevent = "daystillevent",
+                          treatment = "molnupiravir")
+  hr.death
+  writexl::write_xlsx(hr.death, path = paste0("./hr.", event, ".agr_grp3.m.xlsx"))
+}
+```
 
 
 
