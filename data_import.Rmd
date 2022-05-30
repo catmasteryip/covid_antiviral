@@ -98,6 +98,26 @@ sdi = sdi %>%
   mutate(sdi_q = cut(average_SDI_2, breaks = quantile(average_SDI_2), include.lowest = T))
 ```
 
+# import organ dysfunction
 
+```{r}
+# From Luke's
+organ_dys = read.csv("./data/tb_secondary_outcomes.csv")
+
+organ_dys %>% count(type)
+
+organ_dys = organ_dys %>% 
+  mutate(flag = 1) %>%
+  pivot_wider(names_from = type,
+              values_from = flag) %>%
+  rename(`Reference Key` = Reference.Key,
+         "Circulatory.shock" = "Circulatory shock",
+         "Respiratory.failure" = "Respiratory failure",
+         "Acute.kidney.injury" = "Acute kidney injury",
+         "Coagulopathy"="Coagulopathy",
+         "Acute.liver.impairment" = "Acute liver impairment") %>%
+  mutate(`Reference Key` = as.character(`Reference Key`))
+
+```
 
 

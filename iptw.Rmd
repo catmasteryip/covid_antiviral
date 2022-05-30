@@ -169,7 +169,7 @@ writexl::write_xlsx(ip.iptw.p.mortality, "./ip.iptw.p.mortality.xlsx")
 
 for(event in c("death28d", "resp_death")){
   hr.death = c()
-  hr.death = iptw_hr_tidy(df = ip.iptw.p,
+  hr.death = iptw_hr_tidy(df = ip.iptw.p.mortality,
                           x_factors = x_factors_hr,
                           event = event,
                           daystillevent = "daystillevent",
@@ -182,18 +182,59 @@ for(event in c("death28d", "resp_death")){
 # KM approx
 
 ```{r}
-# km_fit <- survfit(Surv(daystillevent, as.factor(death28d)) ~ paxlovid, 
-#                   data=ip.iptw.p)
-# summary(km_fit)
-# autoplot(km_fit)
-# saveRDS(km_fit, "./km_fit.rds")
-# fit <- coxph(id~1, 
-#              Surv(daystillevent, as.factor(death28d)) ~ as.factor(paxlovid), 
-#              data=ip.iptw.p)
-# plot( survfit( fit))
+#KM curve : count time from day 0 
+survfit(Surv(time = daystillevent,event = as.numeric(death28d))~ paxlovid,  
+        weights = weights.p$weights, 
+        data = ip.iptw.p.mortality, 
+        ctype = 2)-> s_original
+summary(s_original)
 
+# KM plot
+autoplot(s_original)
 
+# fit the Cox model_original 
+coxph(Surv(time =daystillevent, event = as.numeric(death28d))~ paxlovid , 
+      weights = weights.p$weights, 
+      data = ip.iptw.p.mortality, 
+      id = `Reference Key`)-> Coxph_model_paxlovid_original
+# exp(coef)== 0.1913
+
+autoplot(Coxph_model_paxlovid_original)
+
+# test the model if the proportionality assumption holds
+cox.zph(Coxph_model_paxlovid_original)-> Test1
+Test1
 ```
+
+# HR organ dysfunction
+
+```{r}
+ip.iptw.p.organ_dys = ip.iptw.p %>%
+  left_join(organ_dys) %>%
+  # repalce NA with 0 
+  mutate(across("Circulatory.shock":"Acute.liver.impairment", ~replace_na(., 0)))
+
+# writexl::write_xlsx(ip.iptw.p.organ_dys, "./ip.iptw.p.organ_dys.xlsx")
+
+for(event in c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")){
+  hr.death = c()
+  # make days till event col
+  ip.iptw.p.organ_dys = ip.iptw.p.organ_dys %>% 
+    mutate(daystillevent = ifelse(!is.na(min_date) & event == 1, 
+                                  ymd(min_date) - ymd(`Admission Date (yyyy-mm-dd)`),
+                                  21),
+           # right-censor
+           daystillevent = ifelse(daystillevent > 21, 21, daystillevent))
+  hr.death = iptw_hr_tidy(df = ip.iptw.p.organ_dys,
+                          x_factors = x_factors_hr,
+                          event = event,
+                          daystillevent = daystillevent,
+                          treatment = "paxlovid")
+  hr.death
+  writexl::write_xlsx(hr.death, path = paste0("./hr.", event, ".agr_grp5.p.xlsx"))
+}
+```
+
 
 # molnupiravir
 
