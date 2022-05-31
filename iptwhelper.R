@@ -91,7 +91,7 @@ iptw_hr_tidy = function(df,
   #' @return A DataFrame that contains the exponentiated hazard ratio given treatment to outcome, 
   #' segmented by each level of each factor in x_factors 
   
-  iformula <- as.formula(paste("Surv(as.numeric(daystillevent), as.numeric(", event,")) ~ ", treatment, collapse = ''))
+  iformula <- as.formula(paste("Surv(as.numeric(",daystillevent,"),as.numeric(", event,")) ~ ", treatment, collapse = ''))
   hr.df = c()
   
   for(x in x_factors){
