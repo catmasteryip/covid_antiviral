@@ -158,7 +158,7 @@ ip.death = ip.id %>%
      # right-censor
      daystillevent = ifelse(daystillevent > 28 & death28d == 0, 28, daystillevent),
      death28d = ifelse(daystillevent > 28 & death28d == 1, 0, death28d), 
-     # replace na, ie discharged, with 28
+     # replace na, ie not yet discharged, with 28
      daystillevent = ifelse(is.na(daystillevent), 28, daystillevent),
      resp_death = ifelse(grepl("^J|^U071",`Death Cause (Main Cause)`) & death28d == 1, 1, 0)
     )
