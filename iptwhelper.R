@@ -97,7 +97,7 @@ iptw_hr_tidy = function(df,
   for(x in x_factors){
     
     hr.df.small = df %>%
-      group_by(!!!syms(x)) %>%
+      group_by(!!as.name(x)) %>%
       do(models = tidy(
         coxph(formula = iformula, 
               data = .,

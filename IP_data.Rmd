@@ -155,9 +155,11 @@ ip.death = ip.id %>%
       TRUE~0
     ),
      daystillevent = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
-     # right-censor
+     # right-censor: if it isn't 28d death and discharge date > 28, limit to 28 only
      daystillevent = ifelse(daystillevent > 28 & death28d == 0, 28, daystillevent),
+     # event imputation: if death date > 28, event = 0
      death28d = ifelse(daystillevent > 28 & death28d == 1, 0, death28d), 
+     # right-censor: if there is no discharge date, days till event is 28
      # replace na, ie not yet discharged, with 28
      daystillevent = ifelse(is.na(daystillevent), 28, daystillevent),
      resp_death = ifelse(grepl("^J|^U071",`Death Cause (Main Cause)`) & death28d == 1, 1, 0)
