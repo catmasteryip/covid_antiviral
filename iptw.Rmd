@@ -92,6 +92,8 @@ ip.iptw.m = ip.iptw %>%
   mutate(molnupiravir = ifelse(is.na(molnupiravirshort), 0, 1))%>%
   select(-contains("long"), -contains("short"), -contains("days"))
 
+# iptw 
+
 weights.m = iptw_tableone(df = ip.iptw.m, 
               treatment = "molnupiravir",
               x_factors = x_factors,
@@ -127,44 +129,6 @@ print(ip.tab1.m, smd = T)
 
 ```
 
-# iptw paxvlovid, ATT
-
-```{r}
-# paxlovid (deprecated)
-# --------------------
-# ip.iptw.p = ip.iptw.p  %>%
-#   # select(`Reference Key`, x_factors, molnupiravir, paxlovid) %>%
-#   left_join(ip.death, by = 'Reference Key') %>%
-#   # replace NA
-#   mutate(across(!"daystillevent", ~replace_na(., 0)),
-#          # factorise everything
-#          across(!"daystillevent" & !"age", factor)) %>%
-#   filter(molnupiravir != 1)
-# 
-# ip.iptw.p %>% filter(across(everything(), is.na))
-# --------------------
-
-
-```
-# molnupiravir (deprecated)
-# --------------------
-
-```{r}
-
-# 
-# ip.iptw.m %>% filter(across(everything(), is.na))
-# --------------------
-
-weights.m = iptw_tableone(df = ip.iptw.m, 
-              treatment = "molnupiravir",
-              x_factors = x_factors,
-              x_factors_tableone = x_factors_tableone,
-              path_of_unweighted_tableone = "./m.unweighted.tableone.xlsx",
-              path_of_weighted_tableone = "./m.weighted.tableone.xlsx")
-
-ip.iptw.m = ip.iptw.m %>%
-  mutate(weight = weights.m$weights)
-```
 
 # HR mortality
 
@@ -175,47 +139,28 @@ x_factors_hr = c("Sex", "age_grp5", "sdi_q", "diabetes", "cancer")
 ```
 
 ```{r}
-# paxlovid
-ip.iptw.p.mortality = ip.iptw.p  %>%
+treatment = "paxlovid"
+df = ip.iptw.p
+path = "./ip.iptw.p.mortality.xlsx"
+
+ip.iptw.mortality = df  %>%
   left_join(ip.death, by = 'Reference Key') %>%
   # replace NA
   mutate(across(!"daystillevent", ~replace_na(., 0)),
          # factorise everything
          across(!"daystillevent" & !"age" & !"weight", factor))
 
-writexl::write_xlsx(ip.iptw.p.mortality, "./ip.iptw.p.mortality.xlsx")
+# writexl::write_xlsx(ip.iptw.mortality, path)
 
 for(event in c("death28d", "resp_death")){
   hr.death = c()
-  hr.death = iptw_hr_tidy(df = ip.iptw.p.mortality,
+  hr.death = iptw_hr_tidy(df = ip.iptw.mortality,
                           x_factors = x_factors_hr,
                           event = event,
                           daystillevent = "daystillevent",
-                          treatment = "paxlovid")
+                          treatment = treatment)
   hr.death
-  writexl::write_xlsx(hr.death, path = paste0("./results/hr.", event, ".agr_grp5.p.xlsx"))
-}
-
-# molnupiravir
-
-ip.iptw.m.mortality = ip.iptw.m  %>%
-  left_join(ip.death, by = 'Reference Key') %>%
-  # replace NA
-  mutate(across(!"daystillevent", ~replace_na(., 0)),
-         # factorise everything
-         across(!"daystillevent" & !"age" & !"weight", factor))
-
-writexl::write_xlsx(ip.iptw.p.mortality, "./ip.iptw.p.mortality.xlsx")
-
-for(event in c("death28d", "resp_death")){
-  hr.death = c()
-  hr.death = iptw_hr_tidy(df = ip.iptw.m.mortality,
-                          x_factors = x_factors_hr,
-                          event = event,
-                          daystillevent = "daystillevent",
-                          treatment = "paxlovid")
-  hr.death
-  writexl::write_xlsx(hr.death, path = paste0("./results/hr.", event, ".agr_grp5.m.xlsx"))
+  writexl::write_xlsx(hr.death, path = paste0("./results/hr/hr.", event, ".agr_grp5.", treatment, ".xlsx"))
 }
 ```
 
@@ -246,8 +191,7 @@ cox.zph(Coxph_model_paxlovid_original)-> Test1
 Test1
 ```
 
-# HR organ dysfunction
-# paxlovid
+# organ dysfunction df
 
 ```{r}
 ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
@@ -265,106 +209,6 @@ ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
                   ~ifelse(. > 21, NA, .)),
            ) 
 
-writexl::write_xlsx(ip.iptw.p.organ_dys.orig, path = "./ip.iptw.p.organ_dys.orig.xlsx")
-
-# writexl::write_xlsx(ip.iptw.p.organ_dys, "./ip.iptw.p.organ_dys.xlsx")
-hr.organ_dys.p = c()
-for(daystillevent in c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")){
-  
-  print(daystillevent)
-  # daystillevent = "Circulatory.shock"
-  ip.iptw.p.organ_dys = ip.iptw.p.organ_dys.orig %>% 
-    mutate(
-           # invalid (beyond study period) or no -> event = 0
-           event = ifelse(!is.na(!!sym(daystillevent)), 1, 0),
-           # impute daystillevent NA as event = 0
-           event = ifelse(is.na(!!sym(daystillevent)), 0, event),
-           
-           )
-  # replace the daystillevent column, aka organ dysfunction column NA (event == 0) with 21d
-  ip.iptw.p.organ_dys[[daystillevent]] = ifelse(is.na(ip.iptw.p.organ_dys[[daystillevent]]),
-                                                21,
-                                                ip.iptw.p.organ_dys[[daystillevent]])
-  hr.small = iptw_hr_tidy(df = ip.iptw.p.organ_dys,
-                          x_factors = x_factors_hr,
-                          event = "event",
-                          daystillevent = daystillevent,
-                          treatment = "paxlovid") %>%
-    mutate(event = daystillevent)
-  hr.organ_dys.p = bind_rows(hr.organ_dys.p, hr.small)
-  
-}
-writexl::write_xlsx(hr.organ_dys.p, path = "./results/hr/hr.organ_dys.agr_grp5.p.xlsx")
-```
-
-# event/risk table
-
-```{r}
-tab1.organ_dys = c()
-remove_brackets_helper = function(x){gsub("\\s*\\([^\\)]+\\)", "", x)}
-for(eventtype in c("Circulatory.shock","Respiratory.failure",
-                   "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")){
-  print(eventtype)
-  tab1.organ_dys.small = 
-    ip.iptw.p.organ_dys.orig %>%
-      select(x_factors_hr, paxlovid, eventtype) %>%
-      mutate(event = ifelse(!is.na(!!as.name(eventtype)), 1, 0),
-             across(everything(), factor)) %>%
-      CreateTableOne(vars = x_factors_hr,
-                     data = .,
-                     strata = c("paxlovid", "event"),
-                   test = F,
-                   smd = F)
-  tab1.organ_dys.small <- print(tab1.organ_dys.small, quote = FALSE, 
-                               noSpaces = TRUE, printToggle = FALSE, 
-                               smd = F, showAllLevels = T)
-  tab1.organ_dys.small = as.data.frame(cbind("variables" = rownames(tab1.organ_dys.small),tab1.organ_dys.small))
-  # remove row names
-  rownames(tab1.organ_dys.small) = NULL 
-  
-  tab1.organ_dys.small = tab1.organ_dys.small %>% 
-    # remove brackets
-    mutate(across(everything(), remove_brackets_helper),
-           across("0:0":"1:1", as.numeric)) %>%
-    # add organ dysfunction type header info
-    add_row(variables = eventtype, .before = 1) %>%
-    # make event/risk cols
-    mutate("paxlovid.user" = paste(`1:1`, "/", `1:1` + `1:0`),
-           "paxlovid.nonuser" = paste(`0:1`, "/", `0:1` + `0:0`)) %>%
-    # discard strata info
-    select(-("0:0":"1:1"))
-  tab1.organ_dys = bind_rows(tab1.organ_dys, tab1.organ_dys.small)
-  
-}
-## Save to a xlsx
-writexl::write_xlsx(tab1.organ_dys, path = "./results/event_risk.organ_dys.xlsx")
-# tab1.organ_dys
-
-```
-
-# forest plot
-
-```{r}
-unique(hr.organ_dys.p$event)
-
-hr.organ_dys.p %>%
-    filter(event == "Respiratory.failure",
-           segment != "age_grp5NA") %>%
-    # group_by(event) %>%
-    forestplot(labeltext = segment,
-              mean = estimate,
-              lower = conf.low,
-              upper = conf.high,
-              clip = c(.1, 10),
-              xticks=c(.1, 1, 10),
-              xlog = T,
-              zero = 1) 
-
-```
-
-# molnupiravir
-
-```{r}
 ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
     left_join(organ_dys) %>%
   # each organ dysfuntion col becomes days till event info
@@ -380,35 +224,216 @@ ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
                   ~ifelse(. > 21, NA, .)),
            ) 
 
+# writexl::write_xlsx(ip.iptw.p.organ_dys.orig, path = "./ip.iptw.p.organ_dys.orig.xlsx")
+```
 
-# writexl::write_xlsx(ip.iptw.p.organ_dys, "./ip.iptw.p.organ_dys.xlsx")
-hr.big = c()
+# tableone analyses
+
+```{r}
+variables = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")
+CreateTableOne(vars = variables,
+               data = ip.iptw.m.organ_dys.orig %>%
+                 mutate(across(variables, function(x){ifelse(!is.na(x), 1, 0)})) %>%
+                 mutate(across(variables, factor)),
+               strata = "molnupiravir")
+tab.holder = ip.iptw.m.organ_dys.orig %>%
+  filter(!is.na(Acute.kidney.injury)) %>%
+  CreateTableOne(vars = x_factors_tableone,
+                 data = .,
+                 strata = "molnupiravir",
+                 test = F)
+print(tab.holder, smd = T)
+```
+
+
+# HR organ dysfunction
+
+```{r}
+# params
+treatment = "molnupiravir"
+path = "./results/hr/hr.organ_dys.agr_grp5.m.xlsx"
+df = ip.iptw.m.organ_dys.orig
+# _________-
+hr.organ_dys = c()
 for(daystillevent in c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")){
   
   print(daystillevent)
   # daystillevent = "Circulatory.shock"
-  ip.iptw.m.organ_dys = ip.iptw.m.organ_dys.orig %>% 
+  ip.iptw.organ_dys = df %>% 
     mutate(
            # invalid (beyond study period) or no -> event = 0
            event = ifelse(!is.na(!!sym(daystillevent)), 1, 0),
            # impute daystillevent NA as event = 0
            event = ifelse(is.na(!!sym(daystillevent)), 0, event),
-           
+           # replace the daystillevent column, aka organ dysfunction column NA (event == 0) with 21d
+           !!(daystillevent) := ifelse(is.na(get(daystillevent)),
+                                            21,
+                                            get(daystillevent))
            )
-  # replace the daystillevent column, aka organ dysfunction column NA (event == 0) with 21d
-  ip.iptw.m.organ_dys[[daystillevent]] = ifelse(is.na(ip.iptw.m.organ_dys[[daystillevent]]),
-                                                21,
-                                                ip.iptw.m.organ_dys[[daystillevent]])
-  hr.small = iptw_hr_tidy(df = ip.iptw.m.organ_dys,
+  hr.one_eventtype = iptw_hr_tidy(df = ip.iptw.organ_dys,
                           x_factors = x_factors_hr,
                           event = "event",
                           daystillevent = daystillevent,
-                          treatment = "molnupiravir") %>%
+                          treatment = treatment) %>%
     mutate(event = daystillevent)
-  hr.big = bind_rows(hr.big, hr.small)
+  hr.organ_dys = bind_rows(hr.organ_dys, hr.one_eventtype)
   
 }
-writexl::write_xlsx(hr.death.big, path = "./results/hr/hr.organ_dys.agr_grp5.m.xlsx")
+writexl::write_xlsx(hr.organ_dys, path = path)
+```
+
+# event/risk table
+
+```{r}
+# params
+# --------
+treatment = "molnupiravir"
+df = ip.iptw.m.organ_dys.orig
+path = "./results/event_risk.organ_dys.m.xlsx"
+# --------
+tab1.organ_dys.numerics = c()
+remove_brackets_helper = function(x){gsub("\\s*\\([^\\)]+\\)", "", x)}
+for(eventtype in c("Circulatory.shock","Respiratory.failure",
+                   "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")){
+  print(eventtype)
+  tab1.organ_dys.one_eventtype = df %>%
+      select(x_factors_hr, treatment, eventtype) %>%
+      mutate(event = ifelse(!is.na(!!as.name(eventtype)), 1, 0),
+             across(everything(), factor)) %>%
+      CreateTableOne(vars = x_factors_hr,
+                     data = .,
+                     strata = c(treatment, "event"),
+                   test = F,
+                   smd = F)
+  
+  tab1.organ_dys.one_eventtype <- print(tab1.organ_dys.one_eventtype, quote = FALSE, 
+                               noSpaces = TRUE, printToggle = FALSE, 
+                               smd = F, showAllLevels = T)
+  tab1.organ_dys.one_eventtype = as.data.frame(cbind("variables" = rownames(tab1.organ_dys.one_eventtype),tab1.organ_dys.one_eventtype))
+  # remove row names
+  rownames(tab1.organ_dys.one_eventtype) = NULL 
+  
+  tab1.organ_dys.one_eventtype = tab1.organ_dys.one_eventtype %>% 
+    # remove brackets
+    mutate(across(everything(), remove_brackets_helper),
+           across("0:0":"1:1", as.numeric)) %>%
+    # add organ dysfunction type header info
+    add_row(variables = eventtype, .before = 1) 
+  tab1.organ_dys.numerics = bind_rows(tab1.organ_dys.numerics, tab1.organ_dys.one_eventtype)
+  
+}
+colnames(tab1.organ_dys.numerics)[3:6] = c("noevent_ctrl", "event_ctrl", "noevent_trt", "event_trt")
+
+# for export into .xlsx
+tab1.organ_dys = tab1.organ_dys.numerics%>%
+    # make event/risk cols
+    mutate("trt.user" = paste(event_trt , "/", event_trt + event_ctrl),
+           "trt.nonuser" = paste(noevent_trt , "/", noevent_trt + noevent_ctrl)) %>%
+    # discard strata info
+    select(-("noevent_ctrl":"event_trt"))
+## Save to a xlsx
+writexl::write_xlsx(tab1.organ_dys, path = path)
+
+
+```
+
+# weighted incidence
+
+```{r}
+x_factors_hr
+# params
+# --------
+treatment = "molnupiravir"
+df = ip.iptw.m.organ_dys.orig
+path = "./results/ird.weighted.m.xlsx"
+# --------
+incidence.df = c()
+for(eventtype in c("Circulatory.shock","Respiratory.failure",
+                   "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment")){
+  incidence.eventtype = c()
+  # eventtype = "Circulatory.shock"
+  # iterate organ dysfunction modes
+  for(x in x_factors_hr){
+    # x = "Sex"
+    # iterate segments
+    # case numbers by segment
+    cases.factor = df %>%
+       #
+      mutate(!!(eventtype) := ifelse(!is.na(get(eventtype)), 1, 0),
+             # weighting
+             !!(eventtype) := get(eventtype) * weight) %>%
+     
+      group_by(!!as.name(x),!!as.name(treatment)) %>%
+      # calculate # cases
+      summarise(no.cases = sum(get(eventtype))) %>%
+      ungroup()
+    
+    # person-time by segment
+    pt.factor = df %>%
+      # weighting
+      mutate(!!(eventtype) := as.numeric(get(eventtype)),
+             !!(eventtype) := ifelse(is.na(get(eventtype)), 21, get(eventtype)),
+             !!(eventtype) := get(eventtype) * weight,
+             !!(treatment) := as.factor(get(treatment))) %>%
+      # calculate weighted PT by segment and treatment
+      group_by(!!as.name(x),!!as.name(treatment)) %>%
+      summarise(person_time = sum(get(eventtype))) %>%
+      ungroup()
+    incidence.factor = cases.factor %>% 
+      mutate(across(1:2, factor)) %>%
+      left_join(pt.factor) %>%
+      mutate(segment = paste0(x, !!!syms(x)),
+             event = eventtype) %>%
+      select(-x) %>%
+      relocate(segment, .before = !!as.name(treatment)) 
+    incidence.eventtype = rbind(incidence.eventtype, incidence.factor)
+  }
+  incidence.df = rbind(incidence.df, incidence.eventtype)
+}
+
+incidence.df = incidence.df %>%
+  pivot_wider(names_from = treatment, 
+              values_from = c("no.cases", "person_time"), 
+              names_glue = paste0("trt{",treatment,"}.{.value}"))
+
+# library(fmsb)
+
+ird = ratedifference(incidence.df$"trt1.no.cases", 
+                     incidence.df$"trt0.no.cases", 
+                     incidence.df$"trt1.person_time", 
+                     incidence.df$"trt0.person_time", CRC = T, conf.level = .95)
+ird.df = incidence.df %>%
+  select(segment, event) %>%
+  bind_cols(p.value = ird$p.value) %>%
+  bind_cols(estimate = ird$estimate) 
+conf.int = as.data.frame(matrix(ird$conf.int, ncol = 2))
+colnames(conf.int) = c("conf.low", "conf.high")
+ird.df = ird.df %>%
+  bind_cols(conf.int) %>%
+  mutate(across(estimate:conf.high, ~(.*1000)))
+
+writexl::write_xlsx(ird.df, path = path)
+```
+
+
+# forest plot
+
+```{r}
+unique(hr.organ_dys.p$event)
+
+hr.organ_dys %>%
+    filter(event == "Respiratory.failure",
+           segment != "age_grp5NA") %>%
+    # group_by(event) %>%
+    forestplot(labeltext = segment,
+              mean = estimate,
+              lower = conf.low,
+              upper = conf.high,
+              clip = c(.1, 10),
+              xticks=c(.1, 1, 10),
+              xlog = T,
+              zero = 1) 
+
 ```
 
 
