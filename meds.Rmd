@@ -191,7 +191,7 @@ ip.paxlovid = ip.paxlovid %>%
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
 
 ip.paxlovid = ip.paxlovid %>%
-  # filter(daystillpaxlovid <= 4)%>%
+  filter(daystillpaxlovid <= 4)%>%
   select(`Reference Key`, daystillpaxlovid)
 
 ip.paxlovid = ip.paxlovid %>% distinct()
@@ -227,7 +227,7 @@ ip.molnupiravir = ip.molnupiravir %>%
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
 
 ip.molnupiravir = ip.molnupiravir %>%
-  # filter(daystillmolnupiravir <= 4)%>%
+  filter(daystillmolnupiravir <= 4)%>%
   select(`Reference Key`, daystillmolnupiravir)
 
 ip.molnupiravir = ip.molnupiravir %>% distinct()

@@ -51,9 +51,10 @@ ip.id = ip.nodrug %>%
   select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`, `Discharge Date (yyyy-mm-dd)`) %>%
   group_by(`Reference Key`) %>%
   slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
-  ungroup()
+  ungroup() %>%
+  filter(`Admission Date (yyyy-mm-dd)` >= "2022-02-22")
 
-writexl::write_xlsx(ip_first_by_patient_id, "./ip.id.xlsx")
+writexl::write_xlsx(ip.id, "./ip.id.xlsx")
 ```
 
 # ip.sexage
@@ -64,8 +65,8 @@ ip.sexage = ip.nodrug %>%
   # remove NA in age, no NA in sex
   filter(!is.na(age)) %>%
   mutate(age = as.numeric(age),
-         age_grp3 = cut(age, breaks = c(0, 65, 75, Inf)),
-         age_grp5 = cut(age, breaks = c(0, 60, 65, 70, 75, 80, Inf))) %>%
+         age_grp3 = cut(age, breaks = c(0, 65, 75, Inf), right = F),
+         age_grp5 = cut(age, breaks = c(0, 60, 65, 70, 75, 80, Inf), right = F)) %>%
   group_by(`Reference Key`) %>%
   # get min age
   slice(which.min(age)) %>%
