@@ -98,7 +98,7 @@ sdi = sdi %>%
   mutate(sdi_q = cut(average_SDI_2, breaks = quantile(average_SDI_2), include.lowest = T))
 ```
 
-# import organ dysfunction
+# import organ dysfunction 
 
 ```{r}
 # From Luke's
@@ -121,4 +121,12 @@ organ_dys = organ_dys %>%
 
 ```
 
+# import culture data
+
+```{r}
+culture = read_xlsx_from_folder("./data/Wave 5/Culture/", ".xlsx")
+culture.id = select(culture, `Reference Key`, "Bacterial Culture and ST Within Hospital Stay - Ref. Date (yyyy-mm-dd HH:MM)") %>%
+  rename(culture.date = "Bacterial Culture and ST Within Hospital Stay - Ref. Date (yyyy-mm-dd HH:MM)") %>%
+  mutate(culture.date = as.Date(culture.date))
+```
 

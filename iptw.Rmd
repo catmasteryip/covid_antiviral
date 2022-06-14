@@ -19,6 +19,7 @@ ip.iptw = ip.id %>%
   filter(!is.na(Sex) | !is.na(age)) %>%
   left_join(ip.sdi) %>%
   filter(!is.na(sdi_q)) %>%
+  left_join(ip.culture) %>%
   left_join(ip.drug.all) %>%
   left_join(ip.diag)
 
@@ -34,13 +35,14 @@ ip.iptw = ip.iptw %>%
   # impute molnupiravir without 4d rule
   # impute molnupiravir with 4d rule
   mutate(molnupiravirlong = ifelse(!is.na(daystillmolnupiravir), 1, 0),
-         molnupiravirshort = ifelse(daystillmolnupiravir <= 4, 1, 0)) 
+         molnupiravirshort = ifelse(daystillmolnupiravir <= 4, 1, 0)) %>%
+  filter(!(molnupiravirlong == 1 & paxlovidlong == 1))
 
 # subset factors
 x_factors_tableone = colnames(ip.iptw)
 x_factors_tableone = x_factors_tableone[!x_factors_tableone %in% c("Reference Key","HN Number",
                                         "Admission Date (yyyy-mm-dd)","Discharge Date (yyyy-mm-dd)",
-                                        "age_grp5", "dexamethasone", "baricitinib", "parkinsons", "district")]
+                                        "age_grp5", "dexamethasone", "baricitinib", "parkinsons", "district", "culture")]
 x_factors_tableone = x_factors_tableone[!grepl("paxlovid|molnupiravir", x_factors_tableone)]
 x_factors = x_factors_tableone[x_factors_tableone != "age"]
 
@@ -74,7 +76,7 @@ weights.p = iptw_tableone(df = ip.iptw.p,
               treatment = "paxlovid",
               x_factors = x_factors,
               x_factors_tableone = x_factors_tableone,
-              path_of_unweighted_tableone = "./p.unweighted.tableone.xlsx",
+              path_of_unweighted_tableone = "./p.unweighted.tableone..xlsx",
               path_of_weighted_tableone = "./p.weighted.tableone.xlsx")
 
 ip.iptw.p = ip.iptw.p %>%
@@ -130,66 +132,19 @@ ip.iptw.m = ip.iptw.m %>%
 
 ```
 
-
-# HR mortality
-
-
-```{r}
-x_factors_hr = c("Sex", "age_grp5", "sdi_q", "diabetes", "cancer")
-# x_factors_hr2 = c("Sex", "age_grp3", "sdi_q", "diabetes", "cancer")
-```
-
-```{r}
-treatment = "paxlovid"
-df = ip.iptw.p
-path = "./ip.iptw.p.mortality.xlsx"
-
-
-ip.iptw.mortality = df  %>%
-  left_join(ip.death, by = 'Reference Key') %>%
-  # replace NA
-  mutate(across(!"daystillevent", ~replace_na(., 0)),
-         # factorise everything
-         across(!"daystillevent" & !"age" & !"weight", factor))
-
-ip.iptw.mortality.p = ip.iptw.mortality
-
-# writexl::write_xlsx(ip.iptw.mortality, path)
-
-for(event in c("death28d", "resp_death")){
-  hr.death = c()
-  hr.death = iptw_hr_tidy(df = ip.iptw.mortality,
-                          x_factors = x_factors_hr,
-                          event = event,
-                          daystillevent = "daystillevent",
-                          treatment = treatment)
-  hr.death
-  hr.death = hr.death %>% mutate(across(c("estimate","conf.low", "conf.high"), function(x){signif(x, 3)}))
-  writexl::write_xlsx(hr.death, path = paste0("./results/hr/hr.", event, ".", treatment, ".xlsx"))
-}
-```
-
-
-```{r}
-# overall hr mortality
-event = "resp_death"
-iformula <- as.formula(paste("Surv(as.numeric(daystillevent),as.numeric(", event,")) ~ ", "molnupiravir", collapse = ''))
-res = tidy(
-  coxph(formula = iformula, 
-              data = ip.iptw.mortality.m,
-              weights = ip.iptw.mortality.m$weight), 
-        exponentiate = T, conf.int = T, conf.level = .95)
-res
-```
-
 # organ dysfunction df
 
 ```{r}
 ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
     left_join(organ_dys) %>%
+  # left-join dexamethasone 
+    left_join(dexamethasone_shortlist) %>%
   # each organ dysfuntion col becomes days till event info
     mutate(across("Circulatory.shock":"Acute.liver.impairment", 
-                  ~ifelse(!is.na(.), 
+                  # if the organ dysfunction col has an onset date and culture is not positive, ie NA
+                  # converted into days till organ dysfunction
+                  # otherwise NA
+                  ~ifelse(!is.na(.) & culture != 1, 
                          ymd(.) - ymd(`Admission Date (yyyy-mm-dd)`),
                          NA)),
            # left-censor as NA for event == 0
@@ -198,19 +153,26 @@ ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
            # right-censor as NA for event == 0 imputation
            across("Circulatory.shock":"Acute.liver.impairment", 
                   ~ifelse(. > 21, NA, .)),
+           # impute respiratory failure by ventilation OR dexamethasone
+           Respiratory.failure = ifelse(!is.na(Respiratory.failure) | daystilldexa <= 21, 
+                                        min(Respiratory.failure, daystilldexa, na.rm = T), 
+                                        Respiratory.failure)
            ) %>%
   rowwise() %>%
   mutate(
          composite = min_(c_across(Circulatory.shock:Acute.liver.impairment)),
          composite = ifelse(composite < 0, NA, composite),
-         composite = ifelse(composite > 21, NA, 0)) %>%
+         composite = ifelse(composite > 21, NA, 0)
+         ) %>%
   ungroup()
 
 ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
     left_join(organ_dys) %>%
+  # left-join dexamethasone 
+    left_join(dexamethasone_shortlist) %>%
   # each organ dysfuntion col becomes days till event info
     mutate(across("Circulatory.shock":"Acute.liver.impairment", 
-                  ~ifelse(!is.na(.), 
+                  ~ifelse(!is.na(.) & culture != 1,
                          ymd(.) - ymd(`Admission Date (yyyy-mm-dd)`),
                          NA)),
            # left-censor as NA for event == 0
@@ -219,6 +181,10 @@ ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
            # right-censor as NA for event == 0 imputation
            across("Circulatory.shock":"Acute.liver.impairment", 
                   ~ifelse(. > 21, NA, .)),
+           # impute respiratory failure by ventilation OR dexamethasone
+           Respiratory.failure = ifelse(!is.na(Respiratory.failure) | daystilldexa <= 21, 
+                                        min(Respiratory.failure, daystilldexa, na.rm = T), 
+                                        Respiratory.failure)
            ) %>%
   rowwise() %>%
   mutate(
@@ -227,69 +193,61 @@ ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
          composite = ifelse(composite > 21, NA, 0)) %>%
   ungroup()
 
-# writexl::write_xlsx(ip.iptw.m.organ_dys.orig, path = "./ip.iptw.m.organ_dys.orig.xlsx")
+writexl::write_xlsx(ip.iptw.m.organ_dys.orig, path = "./ip.iptw.m.organ_dys.culture_positive_incl.xlsx")
 ```
 
-# HR organ dysfunction
+# HR organ dysfunction/mortality robust s.e./bootstrapped
 
 ```{r}
 # params
-treatment = "paxlovid"
-path = "./results/hr/hr.organ_dys.agr_grp5.nofrills.p.xlsx"
-df = ip.iptw.p.organ_dys.orig
+x_factors_hr = c("overall", "Sex","age_grp5","sdi_q","diabetes")
+treatment = "molnupiravir"
+df = ip.iptw.m.organ_dys.orig
+path = "./results/hr.organ_dys.m.resp_failure.non_culture_positive.xlsx"
+events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
+                       "Coagulopathy","Acute.liver.impairment","composite")
+# or 
+# events = c("death28d", "resp_death")
+outcome = "organ_dys"
+# or
+# outcome = "mortality"
 # _________
 hr.organ_dys = c()
-for(daystillevent in c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")){
+for(eventtype in events){
+  print(eventtype)
   
-  print(daystillevent)
-  # daystillevent = "Circulatory.shock"
-  ip.iptw.organ_dys = df %>% 
+  if(outcome == "mortality"){
+    days_tillevent = "daystillevent"
+    ip.iptw.organ_dys = df %>% 
+    mutate(
+           # event is directly days_tillevent or eventtype in mortality dataframes
+           event = get(eventtype)
+           )
+    
+  }else{
+    days_tillevent = eventtype
+    ip.iptw.organ_dys = df %>% 
     mutate(
            # invalid (beyond study period) or no -> event = 0
-           event = ifelse(!is.na(!!sym(daystillevent)), 1, 0),
-           # impute daystillevent NA as event = 0
-           event = ifelse(is.na(!!sym(daystillevent)), 0, event),
-           # replace the daystillevent column, aka organ dysfunction column NA (event == 0) with 21d
-           !!(daystillevent) := ifelse(is.na(get(daystillevent)),
+           event = ifelse(!is.na(!!sym(days_tillevent)), 1, 0),
+           # impute days_tillevent NA as event = 0
+           event = ifelse(is.na(!!sym(days_tillevent)), 0, event),
+           # replace the days_tillevent column, aka organ dysfunction column NA (event == 0) with 21d
+           !!(days_tillevent) := ifelse(is.na(get(days_tillevent)),
                                             21,
-                                            get(daystillevent))
+                                            get(days_tillevent))
            )
+  }
+  
+  
   hr.one_eventtype = iptw_hr_tidy(df = ip.iptw.organ_dys,
                           x_factors = x_factors_hr,
                           event = "event",
-                          daystillevent = daystillevent,
+                          daystillevent = days_tillevent,
                           treatment = treatment) %>%
-    mutate(event = daystillevent)
+    mutate(event = eventtype)
   hr.organ_dys = bind_rows(hr.organ_dys, hr.one_eventtype)
   
-}
-# overall hr organ dysfuntion
-for(daystillevent in c("Circulatory.shock","Respiratory.failure",
-                       "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment",
-                       "composite")){
-
-  print(daystillevent)
-  # daystillevent = "Circulatory.shock"
-  ip.iptw.organ_dys = df %>%
-    mutate(
-           # invalid (beyond study period) or no -> event = 0
-           event = ifelse(!is.na(!!sym(daystillevent)), 1, 0),
-           # impute daystillevent NA as event = 0
-           event = ifelse(is.na(!!sym(daystillevent)), 0, event),
-           # replace the daystillevent column, aka organ dysfunction column NA (event == 0) with 21d
-           !!(daystillevent) := ifelse(is.na(get(daystillevent)),
-                                            21,
-                                            get(daystillevent))
-           )
-  iformula <- as.formula(paste("Surv(as.numeric(",daystillevent,"),as.numeric(event)) ~ ", treatment, collapse = ''))
-  hr.one_eventtype = tidy(
-        coxph(formula = iformula,
-              data = ip.iptw.organ_dys,
-              weights = ip.iptw.organ_dys$weight),
-        exponentiate = T, conf.int = T, conf.level = .95) %>%
-    mutate(event = daystillevent)
-  hr.organ_dys = bind_rows(hr.organ_dys, hr.one_eventtype)
-
 }
 hr.organ_dys = hr.organ_dys %>%
   mutate(across(c("estimate", "conf.low", "conf.high"), function(x){signif(x, 3)}))
@@ -301,15 +259,15 @@ writexl::write_xlsx(hr.organ_dys, path = path)
 ```{r}
 # params
 # --------
-x_factors_hr = c("Sex","age_grp5","sdi_q","diabetes","cancer")
-treatment = "paxlovid"
-df = ip.iptw.p.organ_dys.orig
-path = "./results/event_risk.organ_dys.m.xlsx"
+x_factors_hr = c("Sex","age_grp5","sdi_q","diabetes")
+treatment = "molnupiravir"
+df = ip.iptw.m.organ_dys.orig
+path = "./results/culture_positive_incl/event_risk.organ_dys.m.resp_update.culture_positive_incl.xlsx"
 events = c("Circulatory.shock","Respiratory.failure",
                    "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
 # or 
-events = c("death28d", "resp_death")
-outcome = "mortality" 
+# events = c("death28d", "resp_death")
+# outcome = "mortality" 
 # or 
 outcome = "organ_dys"
 # --------
@@ -347,9 +305,9 @@ for(eventtype in events){
   tab1.organ_dys.one_eventtype = tab1.organ_dys.one_eventtype %>% 
     # remove brackets
     mutate(across(everything(), remove_brackets_helper),
-           across("0:0":"1:1", as.numeric)) %>%
-    # add organ dysfunction type header info
-    add_row(variables = eventtype, .before = 1) 
+           across("0:0":"1:1", as.numeric),
+           # add event type info
+           event = eventtype)
   tab1.organ_dys.numerics = bind_rows(tab1.organ_dys.numerics, tab1.organ_dys.one_eventtype)
   
 }
@@ -373,15 +331,17 @@ writexl::write_xlsx(tab1.organ_dys, path = path)
 ```{r}
 # params
 # --------
-x_factors_hr = c("Sex","age_grp5","sdi_q","diabetes","cancer","overall")
-treatment = "molnupiravir"
-df = ip.iptw.mortality.m
-path = "./results/ird.organ_dys.weighted.nofrills.m.xlsx"
+x_factors_hr = c("overall","Sex","age_grp5","sdi_q","diabetes")
+treatment = "paxlovid"
+df = ip.iptw.p.organ_dys.orig
+path = "./results/ir.organ_dys.weighted.p.resp_failure.non_culture_positive.xlsx"
 events = c("Circulatory.shock","Respiratory.failure",
                    "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
 # or
-events = c("death28d","resp_death")
-outcome = "mortality" # or anything else for organ dysfunction
+# events = c("death28d","resp_death")
+# outcome = "mortality" # or anything else for organ dysfunction
+# or
+outcome = "organ_dys"
 # --------
 incidence.df = c()
 for(eventtype in events){
@@ -390,6 +350,7 @@ for(eventtype in events){
   
   # iterate organ dysfunction modes
   for(x in x_factors_hr){
+    # x = "Sex"
     if(x == "overall"){
       group_var = c(treatment)
     }else{
@@ -430,6 +391,7 @@ for(eventtype in events){
     incidence.factor = cases.factor %>% 
       mutate(across(1:2, factor)) %>%
       left_join(pt.factor) 
+    # browser()
     if(x == "overall"){
       incidence.factor = incidence.factor %>% 
         mutate(segment = "overall")
@@ -441,7 +403,8 @@ for(eventtype in events){
     incidence.factor = incidence.factor %>%
       mutate(event = eventtype) %>%
       select(-contains(x)) %>%
-      relocate(segment, .before = !!as.name(treatment)) 
+      relocate(segment, .before = !!as.name(treatment)) %>%
+      mutate(across(3:4, function(x){as.numeric(as.character(x))}))
     incidence.eventtype = rbind(incidence.eventtype, incidence.factor)
   }
   incidence.df = rbind(incidence.df, incidence.eventtype)
@@ -452,13 +415,31 @@ incidence.df = incidence.df %>%
   pivot_wider(names_from = treatment, 
               values_from = c("no.cases", "person_time"), 
               names_glue = paste0("trt{",treatment,"}.{.value}")) %>%
-  mutate(across(!"event" & !"segment", as.numeric))
+  mutate(across(contains("trt"), as.numeric))
 
+ir.df = incidence.df %>%
+  mutate(trt0.ir = signif(trt0.no.cases / trt0.person_time * 1000, 3),
+         trt1.ir = signif(trt1.no.cases / trt1.person_time * 1000, 3)) %>%
+  select(-trt0.no.cases,-trt1.no.cases,-trt0.person_time,-trt1.person_time)
 
-
-ird = ratedifference(incidence.df$"trt1.no.cases", 
-                     incidence.df$"trt0.no.cases", 
-                     incidence.df$"trt1.person_time", 
+# writexl::write_xlsx(ir.df, path)
+# boostrap here
+# bootstrap helper 
+# rateddifference.boot = function(df, i){
+#   ird = ratedifference(df$"trt1.no.cases", 
+#                      df$"trt0.no.cases", 
+#                      df$"trt1.person_time", 
+#                      df$"trt0.person_time", CRC = T, conf.level = .95)
+#   return(ird)
+# }
+# ird.boot = boot(data = incidence.df,
+#      statistic = rateddifference.boot,
+#      stype = "i",
+#      parallel = "multicore",
+#      ncpus = 15)
+ird = ratedifference(incidence.df$"trt1.no.cases",
+                     incidence.df$"trt0.no.cases",
+                     incidence.df$"trt1.person_time",
                      incidence.df$"trt0.person_time", CRC = T, conf.level = .95)
 ird.df = incidence.df %>%
   select(contains("segment"), event) %>%
@@ -471,6 +452,9 @@ ird.df = ird.df %>%
   mutate(across(estimate:conf.high, ~(.*1000)),
          # round off
          across(estimate:conf.high, function(x){signif(x, 3)}))
+
+ird.df = ird.df %>% 
+  left_join(ir.df)
 
 writexl::write_xlsx(ird.df, path = path)
 ```

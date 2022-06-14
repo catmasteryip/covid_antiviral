@@ -158,7 +158,7 @@ ip.death = ip.id %>%
      daystillevent = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
      # right-censor: if it isn't 28d death and discharge date > 28, limit to 28 only
      daystillevent = ifelse(daystillevent > 28 & death28d == 0, 28, daystillevent),
-     # event imputation: if death date > 28, event = 0
+     # event imputation: if death date - admission > 28, event = 0
      death28d = ifelse(daystillevent > 28 & death28d == 1, 0, death28d), 
      # right-censor: if there is no discharge date, days till event is 28
      # replace na, ie not yet discharged, with 28
@@ -190,6 +190,23 @@ ip.sdi = ip.nodrug %>%
 
 writexl::write_xlsx(ip.sdi, path = "./ip.sdi.xlsx")
 ```
+
+# ip.culture, culture data
+
+```{r}
+ip.culture = ip.id %>%
+  left_join(culture.id, by = "Reference Key") %>%
+  filter(!is.na(culture.date) & 
+         as.Date(culture.date) >= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  group_by(`Reference Key`) %>%
+  slice(which.min(as.Date(culture.date))) %>%
+  ungroup() %>%
+  mutate(daystillculture = as.Date(culture.date) - ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  filter(daystillculture <= 21) %>%
+  mutate(culture = 1) %>%
+  select(`Reference Key`, culture)
+```
+
 
 
 ```{r}

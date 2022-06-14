@@ -95,8 +95,9 @@ dexamethasone_shortlist = steroid %>%
   select(`Reference Key`, `Prescription Start Date`, `Drug Name`, `Route`) %>%
   filter(grepl("DEXAMETHASONE", `Drug Name`) & (`Route` %in% c("ORAL","PARENTERAL"))) %>%
   left_join(ip.id,.) %>%
-  filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
-           ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
+  # filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`) & 
+  #          ymd(`Prescription Start Date`) <= ymd(`Discharge Date (yyyy-mm-dd)`)) %>%
+  filter(ymd(`Prescription Start Date`) >= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
   mutate(daystilldexa = ymd(`Prescription Start Date`) - ymd(`Admission Date (yyyy-mm-dd)`)) %>%
   # get earliest dispension of dexamethasone by reference key
   group_by(`Reference Key`) %>%
@@ -191,12 +192,12 @@ ip.paxlovid = ip.paxlovid %>%
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
 
 ip.paxlovid = ip.paxlovid %>%
-  filter(daystillpaxlovid <= 4)%>%
+  # filter(daystillpaxlovid <= 4)%>%
   select(`Reference Key`, daystillpaxlovid)
 
 ip.paxlovid = ip.paxlovid %>% distinct()
 
-writexl::write_xlsx(ip.paxlovid, path = "./ip.paxlovid.under5d.xlsx")
+writexl::write_xlsx(ip.paxlovid, path = "./ip.paxlovid.xlsx")
 ```
 
 # ip.molnupiravir
@@ -227,12 +228,12 @@ ip.molnupiravir = ip.molnupiravir %>%
          as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
 
 ip.molnupiravir = ip.molnupiravir %>%
-  filter(daystillmolnupiravir <= 4)%>%
+  # filter(daystillmolnupiravir <= 4)%>%
   select(`Reference Key`, daystillmolnupiravir)
 
 ip.molnupiravir = ip.molnupiravir %>% distinct()
 
-writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.under5d.xlsx")
+writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.xlsx")
 ```
 
 # combine all medication status
