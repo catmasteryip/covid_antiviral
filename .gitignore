@@ -1,7 +1,9 @@
 *
 !README.md
 !meds.Rmd
-!iptwhelper.R
+!iptw_HR.Rmd
+!culture_not_considered.Rmd
+!culture_considered.Rmd
 !meds_impute_demo.Rmd
 !data_import.Rmd
 !AE_data.Rmd

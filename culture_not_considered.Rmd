@@ -45,6 +45,7 @@ x_factors_tableone = x_factors_tableone[!x_factors_tableone %in% c("Reference Ke
                                         "age_grp5", "dexamethasone", "baricitinib", "parkinsons", "district", "culture")]
 x_factors_tableone = x_factors_tableone[!grepl("paxlovid|molnupiravir", x_factors_tableone)]
 x_factors = x_factors_tableone[x_factors_tableone != "age"]
+x_factors_weighting = x_factors
 
 # trt_factors = c("paxlovid","molnupiravir")
 
@@ -56,7 +57,8 @@ ip.iptw = ip.iptw %>%
          across(c(x_factors) & !"age", factor)) 
 
 # check if there is any NA, missing data
-ip.iptw %>% filter(across(x_factors, is.na))
+select(ip.iptw.p.mortality, death28d, resp_death, daystillevent) %>% 
+  filter(across(c("death28d", "resp_death", "daystillevent"), is.na))
 ```
 
 # 2 cohorts
@@ -76,7 +78,7 @@ weights.p = iptw_tableone(df = ip.iptw.p,
               treatment = "paxlovid",
               x_factors = x_factors,
               x_factors_tableone = x_factors_tableone,
-              path_of_unweighted_tableone = "./p.unweighted.tableone..xlsx",
+              path_of_unweighted_tableone = "./p.unweighted.tableone.xlsx",
               path_of_weighted_tableone = "./p.weighted.tableone.xlsx")
 
 ip.iptw.p = ip.iptw.p %>%
@@ -107,32 +109,23 @@ weights.m = iptw_tableone(df = ip.iptw.m,
 ip.iptw.m = ip.iptw.m %>%
   mutate(weight = weights.m$weights)
 
+# mortality
 # ---------
+ip.iptw.p.mortality = ip.iptw.p %>%
+  left_join(ip.death)
 
-# optional
-# -----------
-# ip.tab1.p = CreateTableOne(vars = x_factors_tableone,
-#                            data = ip.iptw.p, 
-#                            strata = "paxlovid", test = F)
-# print(ip.tab1.p, smd = T)
-# 
-# 
-# ip.tab1.m = CreateTableOne(vars = x_factors_tableone,
-#                            data = ip.iptw.m, 
-#                            strata = "molnupiravir", test = F)
-# print(ip.tab1.m, smd = T)
+ip.iptw.m.mortality = ip.iptw.m %>%
+  left_join(ip.death)
 
-# ip.tab1.death = CreateTableOne(data = ip.iptw %>%
-#                                  left_join(ip.death) %>%
-#                                  
-#                              filter(!(paxlovid == 1 & molnupiravir == 1)) %>%
-#                              select(x_factors, molnupiravir, paxlovid, death28d), 
-#                            strata = "death28d", test = F)
-# print(ip.tab1.death, smd = T)
+writexl::write_xlsx(ip.iptw.m.mortality, path = "./ip.iptw.mortality.m.xlsx")
 
+# check NA
+ip.iptw.m.mortality %>%
+# select(ip.iptw.m.mortality, death28d, resp_death, daystillevent) %>% 
+  filter(across(everything(), is.na))
 ```
 
-# organ dysfunction df
+# organ dysfunction df (original)
 
 ```{r}
 ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
@@ -141,10 +134,9 @@ ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
     left_join(dexamethasone_shortlist) %>%
   # each organ dysfuntion col becomes days till event info
     mutate(across("Circulatory.shock":"Acute.liver.impairment", 
-                  # if the organ dysfunction col has an onset date and culture is not positive, ie NA
-                  # converted into days till organ dysfunction
+                  # convert into days till organ dysfunction
                   # otherwise NA
-                  ~ifelse(!is.na(.) & culture != 1, 
+                  ~ifelse(!is.na(.), 
                          ymd(.) - ymd(`Admission Date (yyyy-mm-dd)`),
                          NA)),
            # left-censor as NA for event == 0
@@ -152,18 +144,21 @@ ip.iptw.p.organ_dys.orig = ip.iptw.p %>%
                   ~ifelse(. < 0, NA, .)),
            # right-censor as NA for event == 0 imputation
            across("Circulatory.shock":"Acute.liver.impairment", 
-                  ~ifelse(. > 21, NA, .)),
-           # impute respiratory failure by ventilation OR dexamethasone
-           Respiratory.failure = ifelse(!is.na(Respiratory.failure) | daystilldexa <= 21, 
-                                        min(Respiratory.failure, daystilldexa, na.rm = T), 
-                                        Respiratory.failure)
+                  ~ifelse(. > 21, NA, .))
            ) %>%
   rowwise() %>%
   mutate(
-         composite = min_(c_across(Circulatory.shock:Acute.liver.impairment)),
+    # impute respiratory failure by ventilation OR dexamethasone
+    Respiratory.failure = ifelse(!is.na(Respiratory.failure) | daystilldexa <= 21,
+                                        min(Respiratory.failure, daystilldexa, na.rm = T),
+                                        Respiratory.failure)) %>%
+  ungroup() %>%
+  # mutate(# if culture is positive => NA
+  #          across("Circulatory.shock":"Acute.liver.impairment", ~ifelse(culture == 1, NA, .))) %>%
+  rowwise() %>%
+  mutate(composite = min_(c_across(Circulatory.shock:Acute.liver.impairment)),
          composite = ifelse(composite < 0, NA, composite),
-         composite = ifelse(composite > 21, NA, 0)
-         ) %>%
+         composite = ifelse(composite > 21, NA, composite)) %>%
   ungroup()
 
 ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
@@ -172,7 +167,7 @@ ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
     left_join(dexamethasone_shortlist) %>%
   # each organ dysfuntion col becomes days till event info
     mutate(across("Circulatory.shock":"Acute.liver.impairment", 
-                  ~ifelse(!is.na(.) & culture != 1,
+                  ~ifelse(!is.na(.),
                          ymd(.) - ymd(`Admission Date (yyyy-mm-dd)`),
                          NA)),
            # left-censor as NA for event == 0
@@ -181,29 +176,89 @@ ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
            # right-censor as NA for event == 0 imputation
            across("Circulatory.shock":"Acute.liver.impairment", 
                   ~ifelse(. > 21, NA, .)),
-           # impute respiratory failure by ventilation OR dexamethasone
-           Respiratory.failure = ifelse(!is.na(Respiratory.failure) | daystilldexa <= 21, 
-                                        min(Respiratory.failure, daystilldexa, na.rm = T), 
-                                        Respiratory.failure)
-           ) %>%
+    ) %>%
   rowwise() %>%
   mutate(
-         composite = min_(c_across(Circulatory.shock:Acute.liver.impairment)),
+    # impute respiratory failure by ventilation OR dexamethasone
+    Respiratory.failure = ifelse(!is.na(Respiratory.failure) | daystilldexa <= 21,
+                                        min(Respiratory.failure, daystilldexa, na.rm = T),
+                                        Respiratory.failure)) %>%
+  ungroup() %>%
+  # mutate(# if culture is positive => NA
+  #          across("Circulatory.shock":"Acute.liver.impairment", ~ifelse(culture == 1, NA, .))) %>%
+  rowwise() %>%
+  mutate(composite = min_(c_across(Circulatory.shock:Acute.liver.impairment)),
          composite = ifelse(composite < 0, NA, composite),
-         composite = ifelse(composite > 21, NA, 0)) %>%
+         composite = ifelse(composite > 21, NA, composite)) %>%
   ungroup()
 
-writexl::write_xlsx(ip.iptw.m.organ_dys.orig, path = "./ip.iptw.m.organ_dys.culture_positive_incl.xlsx")
+writexl::write_xlsx(ip.iptw.p.organ_dys.orig, path = "./ip.iptw.p.organ_dys.culture_positive_incl.xlsx")
 ```
+
+
+# count data
+
+```{r}
+events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
+                       "Coagulopathy","Acute.liver.impairment","composite")
+# death vs organ dysfunction
+df.holder = ip.iptw.p.organ_dys.orig %>%
+                             bind_rows(filter(ip.iptw.m.organ_dys.orig, molnupiravir == 1)) %>%
+                             left_join(ip.death) %>%
+                             mutate(across(c(events,"death28d"), ~ifelse(. != 0, 1, 0)),
+                                    across(c("molnupiravir", "paxlovid"), ~replace_na(., 0)),
+                                    
+                                    treatment = case_when(
+                                      molnupiravir == 1~"molnupiravir",
+                                      paxlovid == 1~"paxlovid",
+                                      T~"no antiviral"
+                                    ),
+                                    across(c(events, "treatment", "death28d"), factor)) %>%
+  select(-paxlovid, -molnupiravir)
+# df.holder %>% count(treatment)
+tab.ip.death.organ_dys = CreateTableOne(vars = events,
+                           data = df.holder,
+                           strata = "treatment", test = T,
+                           addOverall = T)
+tab.ip.death.organ_dys
+tab.ip.death.organ_dys = tableone_to_xlsx(tab.ip.death.organ_dys)
+writexl::write_xlsx(tab.ip.death.organ_dys, path = "./results/tab.ip.death.organ_dys.xlsx")
+
+tab.ip.icu.organ_dys
+
+# culture vs organ dysfunction (with culture filter off)
+# remember to turn off culture filter in organ dys df imputation
+tab.ip.culture.organ_dys = CreateTableOne(vars = events,
+                           data = ip.iptw.p.organ_dys.orig %>%
+                         mutate(across(c(events), ~ifelse(!is.na(.), 1, 0)),
+                       across(c(events,"culture"), factor)),
+                           strata = c("culture"), test = T)
+tab.ip.culture.organ_dys = tableone_to_xlsx(tab.ip.culture.organ_dys)
+writexl::write_xlsx(tab.ip.culture.organ_dys, path = "./results/tab.ip.culture.organ_dys.xlsx")
+
+# organ dysfunction, death vs LOS
+tab.ip.organ_dys.death.los = CreateTableOne(vars = c(events, daystillevent),
+                           data = ip.iptw.p.organ_dys.orig %>%
+                             bind_rows(filter(ip.iptw.m.organ_dys.orig, molnupiravir == 1)) %>%
+                             left_join(ip.death) %>%
+                             mutate(across(events, ~ifelse(!is.na(.), 1, 0)),
+                                    across(events, factor)),
+                           strata = c("death28d"), test = T)
+tab.ip.organ_dys.death.los
+tab.ip.organ_dys.death.los = tableone_to_xlsx(tab.ip.organ_dys.death.los)
+writexl::write_xlsx(tab.ip.organ_dys.death.los, path = "./results/tab.ip.death.organ_dys.los.xlsx")
+```
+
 
 # HR organ dysfunction/mortality robust s.e./bootstrapped
 
 ```{r}
 # params
 x_factors_hr = c("overall", "Sex","age_grp5","sdi_q","diabetes")
+# x_factors_hr = c("overall")
 treatment = "molnupiravir"
 df = ip.iptw.m.organ_dys.orig
-path = "./results/hr.organ_dys.m.resp_failure.non_culture_positive.xlsx"
+path = "./results/culture_positive_incl/hr.organ_dys.m.xlsx"
 events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
                        "Coagulopathy","Acute.liver.impairment","composite")
 # or 
@@ -242,6 +297,7 @@ for(eventtype in events){
   
   hr.one_eventtype = iptw_hr_tidy(df = ip.iptw.organ_dys,
                           x_factors = x_factors_hr,
+                          # x_factors_weighting = x_factors_weighting,
                           event = "event",
                           daystillevent = days_tillevent,
                           treatment = treatment) %>%
@@ -250,8 +306,10 @@ for(eventtype in events){
   
 }
 hr.organ_dys = hr.organ_dys %>%
-  mutate(across(c("estimate", "conf.low", "conf.high"), function(x){signif(x, 3)}))
-writexl::write_xlsx(hr.organ_dys, path = path)
+  mutate(across(c("estimate", "conf.low", "conf.high"), function(x){signif(x, 3)})) %>%
+  select(segment, event, estimate, conf.low, conf.high) %>%
+  mutate(hr.text = paste0(estimate, "(", conf.low, "—", conf.high, ")")) 
+# writexl::write_xlsx(hr.organ_dys, path = path)
 ```
 
 # event/risk table of organ dysfunction/mortality
@@ -259,18 +317,20 @@ writexl::write_xlsx(hr.organ_dys, path = path)
 ```{r}
 # params
 # --------
-x_factors_hr = c("Sex","age_grp5","sdi_q","diabetes")
-treatment = "molnupiravir"
-df = ip.iptw.m.organ_dys.orig
-path = "./results/culture_positive_incl/event_risk.organ_dys.m.resp_update.culture_positive_incl.xlsx"
-events = c("Circulatory.shock","Respiratory.failure",
-                   "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
-# or 
-# events = c("death28d", "resp_death")
-# outcome = "mortality" 
-# or 
-outcome = "organ_dys"
+# x_factors_hr = c("Sex","age_grp5","sdi_q","diabetes")
+# treatment = "paxlovid"
+# df = ip.iptw.p.organ_dys.orig
+# path = "./results/event_risk.organ_dys.p.resp_update.non_culture_positive.xlsx"
+# events = c("Circulatory.shock","Respiratory.failure",
+#                    "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
+# # or 
+# # events = c("death28d", "resp_death")
+# # outcome = "mortality" 
+# # or 
+# outcome = "organ_dys"
 # --------
+x_factors_hr_orig = x_factors_hr
+x_factors_hr = x_factors_hr[x_factors_hr != "overall"]
 tab1.organ_dys.numerics = c()
 for(eventtype in events){
   print(eventtype)
@@ -314,16 +374,16 @@ for(eventtype in events){
 colnames(tab1.organ_dys.numerics)[3:6] = c("noevent_ctrl", "event_ctrl", "noevent_trt", "event_trt")
 
 # for export into .xlsx
-tab1.organ_dys = tab1.organ_dys.numerics%>%
+tab1.organ_dys = tab1.organ_dys.numerics %>%
     # make event/risk cols
     mutate("trt.user" = paste(event_trt , "/", event_trt + event_ctrl),
            "trt.nonuser" = paste(noevent_trt , "/", noevent_trt + noevent_ctrl)) %>%
     # discard strata info
     select(-("noevent_ctrl":"event_trt"))
 ## Save to a xlsx
-writexl::write_xlsx(tab1.organ_dys, path = path)
+# writexl::write_xlsx(tab1.organ_dys, path = path)
 
-
+x_factors_hr = x_factors_hr_orig
 ```
 
 # weighted IRD organ dysfunction/mortality, stratified and overall
@@ -331,17 +391,17 @@ writexl::write_xlsx(tab1.organ_dys, path = path)
 ```{r}
 # params
 # --------
-x_factors_hr = c("overall","Sex","age_grp5","sdi_q","diabetes")
-treatment = "paxlovid"
-df = ip.iptw.p.organ_dys.orig
-path = "./results/ir.organ_dys.weighted.p.resp_failure.non_culture_positive.xlsx"
-events = c("Circulatory.shock","Respiratory.failure",
-                   "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
+# x_factors_hr = c("overall","Sex","age_grp5","sdi_q","diabetes")
+# treatment = "molnupiravir"
+# df = ip.iptw.m.organ_dys.orig
+# path = "./results/ir.organ_dys.weighted.m.resp_failure.non_culture_positive.xlsx"
+# events = c("Circulatory.shock","Respiratory.failure",
+#                    "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
 # or
 # events = c("death28d","resp_death")
 # outcome = "mortality" # or anything else for organ dysfunction
 # or
-outcome = "organ_dys"
+# outcome = "organ_dys"
 # --------
 incidence.df = c()
 for(eventtype in events){
@@ -422,21 +482,6 @@ ir.df = incidence.df %>%
          trt1.ir = signif(trt1.no.cases / trt1.person_time * 1000, 3)) %>%
   select(-trt0.no.cases,-trt1.no.cases,-trt0.person_time,-trt1.person_time)
 
-# writexl::write_xlsx(ir.df, path)
-# boostrap here
-# bootstrap helper 
-# rateddifference.boot = function(df, i){
-#   ird = ratedifference(df$"trt1.no.cases", 
-#                      df$"trt0.no.cases", 
-#                      df$"trt1.person_time", 
-#                      df$"trt0.person_time", CRC = T, conf.level = .95)
-#   return(ird)
-# }
-# ird.boot = boot(data = incidence.df,
-#      statistic = rateddifference.boot,
-#      stype = "i",
-#      parallel = "multicore",
-#      ncpus = 15)
 ird = ratedifference(incidence.df$"trt1.no.cases",
                      incidence.df$"trt0.no.cases",
                      incidence.df$"trt1.person_time",
@@ -456,7 +501,23 @@ ird.df = ird.df %>%
 ird.df = ird.df %>% 
   left_join(ir.df)
 
-writexl::write_xlsx(ird.df, path = path)
+ird.df = ird.df %>%
+  mutate(ird.text = paste0(estimate, "(", conf.low, "-", conf.high, ")"))
+# writexl::write_xlsx(ird.df, path = path)
+```
+
+# combine event/risk, ird and hr tables 
+
+```{r}
+hr.table = tab1.organ_dys %>% 
+  bind_cols(select(ird.df, trt0.ir, trt1.ir, estimate:conf.high) %>%
+    rename_with(.fn = ~paste0("ird.", .), .cols=estimate:conf.high)) %>%
+  bind_cols(select(hr.organ_dys, estimate:conf.high)%>%
+              rename_with(.fn = ~paste0("hr.", .), .cols=estimate:conf.high))
+writexl::write_xlsx(hr.table, path = path)
+writexl::write_xlsx(tab1.organ_dys, path = gsub(".xlsx", ".eventrisk.xlsx", path))
+writexl::write_xlsx(ird.df, path = gsub(".xlsx", ".ir.xlsx", path))
+writexl::write_xlsx(hr.organ_dys, path = gsub(".xlsx", ".hr.xlsx", path))
 ```
 
 

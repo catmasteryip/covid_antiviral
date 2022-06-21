@@ -1,5 +1,11 @@
 # it's a helper functions compilation
 
+tableone_to_xlsx = function(tableone.obj){
+  tableone.obj = print(tableone.obj, quote = FALSE, 
+                       noSpaces = TRUE, printToggle = FALSE, smd = T)
+  tableone.obj = as.data.frame(cbind(" " = rownames(tableone.obj),tableone.obj))
+}
+
 # collapse drug names
 collapse_meds_names = function(names){
   #' convert a string of drug names of one drug category to grepl readable form, collapsed by | (or condition)

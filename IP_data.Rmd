@@ -168,7 +168,7 @@ ip.death = ip.id %>%
 
 # ip.death %>% count(`Reference Key`) %>% count(n)
 
-ip.death = ip.death %>%
+ip.death = ip.death.los %>%
   select(`Reference Key`, death28d, daystillevent, resp_death)
 
 # colnames(ip_death_los)

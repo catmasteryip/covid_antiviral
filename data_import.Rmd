@@ -129,4 +129,17 @@ culture.id = select(culture, `Reference Key`, "Bacterial Culture and ST Within H
   rename(culture.date = "Bacterial Culture and ST Within Hospital Stay - Ref. Date (yyyy-mm-dd HH:MM)") %>%
   mutate(culture.date = as.Date(culture.date))
 ```
+# icu data
+
+```{r}
+demo_ip = read_xlsx_from_folder("./data/5th Wave 202202/", "_demo_IP.xlsx")
+icu = demo_ip %>%
+  filter(grepl("ICU", `Clinical Specialty (EIS)`),
+         grepl("Transfer In", `Movement Type`)) %>%
+  select(`HN Number`, `Admission Date (yyyy-mm-dd)`, `Movement Time`) %>%
+  mutate(daystillicu = date(ymd_hm(`Movement Time`)) - ymd(`Admission Date (yyyy-mm-dd)`))
+icu = aggregate(.~`HN Number`, icu, min)  %>%
+  select(-`Admission Date (yyyy-mm-dd)`, -`Movement Time`)
+icu %>% count(`HN Number`) %>% filter(n > 1)
+```
 

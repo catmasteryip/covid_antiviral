@@ -134,6 +134,7 @@ iptw_hr_tidy = function(df,
 
 iptw_hr_boot = function(df, 
                         x_factors,
+                        x_factors_weighting,
                         event,
                         daystillevent,
                         treatment){
@@ -161,13 +162,16 @@ iptw_hr_boot = function(df,
       nest() %>%
       mutate(boot.obj = map(.x = data,
                             .f = ~boot(data = .x,
-                                       statistic = coxph.tidy,
+                                       statistic = iptw.coxph.tidy,
                                        R = 200,
                                        stype = "i",
+                                       parallel = "multicore",
+                                       ncpus = 15,
                                        # coxph.tidy arguments
                                        formula = iformula,
-                                       parallel = "multicore",
-                                       ncpus = 15))
+                                       treatment = treatment,
+                                       x_factors = x_factors_weighting
+                                       ))
       ) %>%
       select(-data) %>%
       mutate(booted.ci = map(.x = boot.obj,
@@ -197,18 +201,31 @@ iptw_hr_boot = function(df,
   hr.df
 }
 
+
 # boostrap ci helpers
 
-coxph.tidy = function(df, i, formula){
+iptw.coxph.tidy = function(df, i, formula, x_factors, treatment){
   # browser()
+  # re-iptw
+  
+  function_call<-paste0("psweight <- weightit(",treatment," ~ ",paste(x_factors, collapse = "+"), 
+                        ", data = df[i,], method = \"ps\", 
+                estimand = \"ATT\")"
+  )
+  eval(parse(text = function_call))
+  # browser()
+  df = df[i,] %>%
+    mutate(weight = psweight$weights)
+  
   coxph.obj = coxph(formula = formula, 
-        data = df[i,],
+        data = df,
         weights = weight)
   
   results = tidy(coxph.obj, exponentiate = T, conf.int = T, conf.level = .95)
-  results = c(results$estimate, results$conf.low, results$conf.high)
+  results = results$estimate
   return(results)
 }
+
 booting.ci = function(boot.obj){
   booted.ci = boot.ci(boot.obj, conf = .95, type = c("perc"))
   estimate = booted.ci$t0
@@ -230,46 +247,4 @@ par.boot.coxph = function(nested.df, iformula){
                                      ncpus = 15))
     ))
 }
-
-
-library(parallel)
-
-# find out max. number of cores
-detectCores()
-# assign cores 
-cl <- makeCluster(getOption("cl.cores", 2))
-# 
-
-iformula = as.formula("Surv(as.numeric(daystillevent), as.numeric(death28d)) ~ paxlovid")
-x = "Sex"
-ip.iptw.mortality.p.boot.hr = ip.iptw.mortality.p %>%
-  group_by(!!as.name(x)) %>%
-  nest() %>%
-  mutate(boot.obj = map(.x = data,
-                        .f = ~boot(data = .x,
-                                   statistic = coxph.tidy,
-                                   R = 200,
-                                   stype = "i",
-                                   # coxph.tidy arguments
-                                   formula = iformula,
-                                   parallel = "multicore",
-                                   ncpus = 15))
-         ) %>%
-  select(-data) 
-ip.iptw.mortality.p.boot.hr %>%
-  mutate(booted.ci = map(.x = boot.obj,
-                         .f = ~booting.ci(.x))) %>%
-  
-  unnest_wider(booted.ci) %>%
-  rename("estimate" = !!names(.[3]),
-         "conf.low" = !!names(.[4]),
-         "conf.high" = !!names(.[5])) %>%
-  mutate(segment = paste0(x, !!!syms(x))) %>%
-  ungroup() %>%
-  select(-x, -boot.obj) 
-  
-
-# %>%
-#   relocate(segment, .before = term) %>%
-#   select(-term)
 
