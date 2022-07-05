@@ -9,6 +9,12 @@ title: "R Notebook"
 library(forestplot)
 library(ggfortify)
 library(fmsb)
+library(here)
+library(tidyr)
+library(dplyr)
+select = dplyr::select
+source("./covid_antiviral/scripts/iptwhelper.R")
+source("./covid_antiviral/scripts/helper.R")
 ```
 
 # propensity and IPTW by weightit
@@ -114,8 +120,12 @@ ip.iptw.m = ip.iptw.m %>%
 ip.iptw.p.mortality = ip.iptw.p %>%
   left_join(ip.death)
 
+ip.iptw.p.mortality = readxl::read_xlsx(here("./covid_antiviral/data/ip.iptw.mortality.p.culture_positive_incl.xlsx"))
+
 ip.iptw.m.mortality = ip.iptw.m %>%
   left_join(ip.death)
+
+ip.iptw.m.mortality = readxl::read_xlsx(here("./covid_antiviral/data/ip.iptw.mortality.m.culture_positive_incl.xlsx"))
 
 writexl::write_xlsx(ip.iptw.m.mortality, path = "./ip.iptw.mortality.m.xlsx")
 
@@ -257,15 +267,15 @@ writexl::write_xlsx(tab.ip.organ_dys.death.los, path = "./results/tab.ip.death.o
 x_factors_hr = c("overall", "Sex","age_grp5","sdi_q","diabetes")
 # x_factors_hr = c("overall")
 treatment = "molnupiravir"
-df = ip.iptw.m.organ_dys.orig
+df = ip.iptw.m.mortality
 path = "./results/culture_positive_incl/hr.organ_dys.m.xlsx"
-events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
-                       "Coagulopathy","Acute.liver.impairment","composite")
+# events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
+#                        "Coagulopathy","Acute.liver.impairment","composite")
 # or 
-# events = c("death28d", "resp_death")
-outcome = "organ_dys"
+events = c("death28d", "resp_death")
+# outcome = "organ_dys"
 # or
-# outcome = "mortality"
+outcome = "mortality"
 # _________
 hr.organ_dys = c()
 for(eventtype in events){
@@ -391,10 +401,10 @@ x_factors_hr = x_factors_hr_orig
 ```{r}
 # params
 # --------
-# x_factors_hr = c("overall","Sex","age_grp5","sdi_q","diabetes")
+# x_factors_hr = c("overall")
 # treatment = "molnupiravir"
 # df = ip.iptw.m.organ_dys.orig
-# path = "./results/ir.organ_dys.weighted.m.resp_failure.non_culture_positive.xlsx"
+path = "./results/culture_positive_incl/ird.ip.iptw.m.mortality.xlsx"
 # events = c("Circulatory.shock","Respiratory.failure",
 #                    "Acute.kidney.injury","Coagulopathy","Acute.liver.impairment","composite")
 # or
@@ -416,17 +426,25 @@ for(eventtype in events){
     }else{
       group_var = c(x, treatment)
     }
-    print(x)
+    # print(x)
     # iterate segments
     # case numbers by segment
-    cases.factor = df %>%
-       #
-      mutate(!!(eventtype) := ifelse(!is.na(get(eventtype)), 1, 0),
-             # weighting
-             !!(eventtype) := get(eventtype) * weight) %>%
+    print(eventtype)
+    
+    if(outcome != "mortality"){
+      cases.factor = df %>%
+        mutate(!!(eventtype) := ifelse(!is.na(get(eventtype)), 1, 0))
+             
+    }else{
+      cases.factor = df
+    }
+    # # weighting
+    cases.factor = cases.factor %>%
+            mutate(!!(eventtype) := get(eventtype) * weight
+             ) %>%
      
       group_by_at(group_var) %>%
-      # calculate # cases
+      # calculate # cases (events)
       summarise(no.cases = sum(get(eventtype))) %>%
       ungroup()
     
@@ -503,7 +521,7 @@ ird.df = ird.df %>%
 
 ird.df = ird.df %>%
   mutate(ird.text = paste0(estimate, "(", conf.low, "-", conf.high, ")"))
-# writexl::write_xlsx(ird.df, path = path)
+writexl::write_xlsx(ird.df, path = path)
 ```
 
 # combine event/risk, ird and hr tables 
