@@ -8,8 +8,11 @@ output: html_notebook
 ```{r}
 # params
 x_factors_hr = c("overall", "Sex","age_grp5","sdi_q","diabetes")
-# x_factors_hr = c("overall")
-treatment = "antiviral"
+
+# treatment 
+treatment = "antiviral" # or
+# treatment = "paxlovid" # or
+# treatment = "molnupiravir"
 df = ip.iptw.c.mortality
 path = "./culture_results/hr/hr.mortality.c.xlsx"
 # events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
@@ -172,14 +175,20 @@ for(eventtype in events){
     print(x)
     # iterate segments
     # case numbers by segment
-    cases.factor = df %>%
-       #
-      mutate(!!(eventtype) := ifelse(!is.na(get(eventtype)), 1, 0),
-             # weighting
-             !!(eventtype) := get(eventtype) * weight) %>%
+    if(outcome != "mortality"){
+      cases.factor = df %>%
+        mutate(!!(eventtype) := ifelse(!is.na(get(eventtype)), 1, 0))
+             
+    }else{
+      cases.factor = df
+    }
+    # # weighting
+    cases.factor = cases.factor %>%
+            mutate(!!(eventtype) := get(eventtype) * weight
+             ) %>%
      
       group_by_at(group_var) %>%
-      # calculate # cases
+      # calculate # cases (events)
       summarise(no.cases = sum(get(eventtype))) %>%
       ungroup()
     
