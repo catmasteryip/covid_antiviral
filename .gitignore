@@ -14,4 +14,6 @@
 !scripts/
 !scripts/*
 !demo_IP.Rmd
+!data_import_pp3.Rmd
+!IP_data_pp3.Rmd
 .Rproj.user

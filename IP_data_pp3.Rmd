@@ -1,0 +1,252 @@
+---
+title: "R Notebook"
+
+---
+
+# import libraries
+
+```{r}
+library(survival)
+library(broom)
+library(survey)
+library(comorbidity)
+library(WeightIt)
+library(cobalt)
+library(tableone)
+library(ggfortify)
+library(dplyr)
+library(tidyr)
+source("./scripts/helper.R")
+
+```
+
+
+# 2022-04-26: episode death info is missing from hosp files; 
+# please refer to data_import.Rmd for IP data import 
+# check drug names (optional)
+
+```{r}
+unique(ip$`Drug Name`)[grepl("DEXAMETHASONE", unique(ip$`Drug Name`))]
+```
+
+# dissociate drug use and ip data (unique by HN number)
+
+```{r}
+# specify icd9 code column index
+diag_cols = 35:49
+
+ip.nodrug = ip %>%
+  select(-`Drug Name`) %>%
+  distinct() %>%
+  # exclude pregnancy
+  mutate(pregnancy = ifelse(if_any(diag_cols, ~between(., "630", "679.99")), T, F),
+         pregnancy = ifelse(is.na(pregnancy), F, pregnancy)) %>%
+  filter(!pregnancy) %>%
+  select(-pregnancy)
+```
+
+# identification dataframe of IP patients' first admissions only (ip.id)
+
+```{r}
+ip.id = ip.nodrug %>%
+  select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`, `Discharge Date (yyyy-mm-dd)`) %>%
+  group_by(`Reference Key`) %>%
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  ungroup() %>%
+  filter(`Admission Date (yyyy-mm-dd)` >= "2022-02-22")
+
+writexl::write_xlsx(ip.id, "./culture_results/ip.id.xlsx")
+```
+
+# ip.sexage
+
+```{r}
+ip.sexage = ip.nodrug %>%
+  select(`Reference Key`, Sex, age = `Admission Age (Year) (episode based)`) %>%
+  # remove NA in age, no NA in sex
+  filter(!is.na(age)) %>%
+  mutate(age = as.numeric(age),
+         age_grp3 = cut(age, breaks = c(0, 65, 75, Inf), right = F),
+         age_grp5 = cut(age, breaks = c(0, 60, 65, 70, 75, 80, Inf), right = F)) %>%
+  group_by(`Reference Key`) %>%
+  # get min age
+  slice(which.min(age)) %>%
+  ungroup()
+
+# writexl::write_xlsx(ip.sexage, path = "./ip.sexage.xlsx")
+```
+
+# comorbs, change to comorbidity package (ip.diag)
+
+```{r}
+# specify icd9 code column index
+diag_cols = 35:49
+
+ip.diag = ip.nodrug %>% 
+  select(`HN Number`, diag_cols) %>%
+  impute_comorbs(., diag_cols - 33) 
+
+ip.diag = aggregate(ip.diag, by = list(ip.diag[, "HN Number"]), FUN = "max") %>%
+  select(-Group.1)
+
+ip.charlson = ip.nodrug %>% 
+  select(`HN Number`, diag_cols) %>%
+  # filter(`HN Number` %in% ip_first_by_patient_id$`HN Number`) %>%
+  pivot_longer(cols = diag_cols - 33 , names_to = "diagnosis", values_to = "code") %>%
+  drop_na() %>%
+  group_by(`HN Number`) %>%
+  distinct() %>%
+  ungroup() %>%
+  mutate(id = 1:n())
+
+# CCI
+charlson = comorbidity::comorbidity(x = as.data.frame(ip.charlson), 
+                                   id = "id", 
+                                   code = "code", 
+                                   map = "charlson_icd9_quan", 
+                                   assign0 = F) 
+# charlson comorbs and cci by HN Number
+charlson = charlson %>%
+  left_join(select(ip.charlson, `HN Number`, id))
+charlson = aggregate(charlson, by = list(charlson[, "HN Number"]), FUN = "max") %>%
+  select(-Group.1)
+charlson = charlson %>% 
+  rowwise() %>% 
+  mutate(cci = sum(c_across(mi:aids))) %>%
+  mutate(cci = case_when(
+    cci == 0~ "0",
+    cci < 3~ "1-2",
+    cci < 5~ "3-4",
+    cci >= 5~ "5+",
+    TRUE ~ "0"
+  ))
+cci = charlson %>%
+  select(`HN Number`, cci)
+# writexl::write_xlsx(charlson_diag, path = "./charlson_diag.xlsx")
+
+
+ip.diag = ip.diag %>%
+  left_join(cci, by = "HN Number") %>%
+  # replace_na of ci
+  mutate(cci = ifelse(is.na(cci), "0", cci))
+  # select(-diagnosis, -id, -code)
+  
+unique(ip.diag$cci)
+
+# check if there is any NA, missing data
+ip.diag %>% filter_all((any_vars(is.na(.))))  
+# writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
+```
+
+# 28d mortality and length of stay
+# respiratory mortality: ICD-10 code J00-J99, and U071
+
+```{r}
+
+# impute 28d death
+ip.death = ip.id %>%
+  left_join(select(ip.nodrug, `HN Number`, `Admission Date (yyyy-mm-dd)`,
+                   `Discharge Date (yyyy-mm-dd)`, `Discharge Status`)) %>%
+  left_join(death) %>%
+  mutate(death28d = case_when(
+    `Discharge Status`=="DEATH" & 
+      ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`) <= 28 &
+      !is.na(`Discharge Status`)~1, 
+      # unknown discharge status, unknown death28d status -> survival
+      is.na(`Discharge Status`)~0,
+      TRUE~0
+    ),
+     daystillevent = ymd(`Discharge Date (yyyy-mm-dd)`) - ymd(`Admission Date (yyyy-mm-dd)`),
+     # right-censor: if it isn't 28d death and discharge date > 28, limit to 28 only
+     daystillevent = ifelse(daystillevent > 28 & death28d == 0, 28, daystillevent),
+     # event imputation: if death date - admission > 28, event = 0
+     death28d = ifelse(daystillevent > 28 & death28d == 1, 0, death28d), 
+     # right-censor: if there is no discharge date, days till event is 28
+     # replace na, ie not yet discharged, with 28
+     daystillevent = ifelse(is.na(daystillevent), 28, daystillevent),
+     resp_death = ifelse(grepl("^J|^U071",`Death Cause (Main Cause)`) & death28d == 1, 1, 0)
+    )
+
+# ip.death %>% count(`Reference Key`) %>% count(n)
+
+ip.death = ip.death %>%
+  select(`Reference Key`, death28d, daystillevent, resp_death)
+
+# colnames(ip_death_los)
+# writexl::write_xlsx(ip.death, './ip.death.xlsx')
+```
+
+# SDI
+
+```{r}
+
+ip.sdi = ip.nodrug %>%
+  select(`Reference Key`, district = `District of Residence (system code)`) %>%
+  group_by(`Reference Key`) %>%
+  slice(which(district == first(district))) %>%
+  ungroup() %>%
+  distinct() %>%
+  left_join(rename(sdi, district = Districtcode)) %>%
+  select(-average_SDI_2)
+
+# writexl::write_xlsx(ip.sdi, path = "./ip.sdi.xlsx")
+```
+
+# ip.culture, culture data
+# 3rd Aug 2022: up to here
+
+```{r}
+ip.culture = ip.id %>%
+  left_join(culture.id, by = "Reference Key") %>%
+  filter(!is.na(culture.date) & 
+         as.Date(culture.date) >= ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  group_by(`Reference Key`) %>%
+  slice(which.min(as.Date(culture.date))) %>%
+  ungroup() %>%
+  mutate(daystillculture = as.Date(culture.date) - ymd(`Admission Date (yyyy-mm-dd)`)) %>%
+  filter(daystillculture <= 21) %>%
+  mutate(culture = 1) %>%
+  select(`Reference Key`, culture)
+
+```
+
+
+
+```{r}
+ip.iptw.holder = ip.id %>%
+  left_join(ip.sexage) %>%
+  filter(!is.na(Sex) | !is.na(age)) %>%
+  left_join(ip.sdi) %>%
+  filter(!is.na(sdi_q))
+
+ip.iptw.holder %>% nrow()
+
+ip.iptw.holder %>% 
+  left_join(ip.paxlovid) %>% 
+  mutate(paxlovidlong = ifelse(!is.na(daystillpaxlovid), 1, 0),
+         paxlovidshort = ifelse(daystillpaxlovid <= 4, 1, 0)) %>%
+  
+  left_join(ip.molnupiravir) %>%
+  mutate(molnupiravirlong = ifelse(!is.na(daystillmolnupiravir), 1, 0),
+         molnupiravirshort = ifelse(daystillmolnupiravir <= 4, 1, 0)) %>%
+  filter(molnupiravirlong == 1) %>%
+  # count(paxlovidlong) %>%
+  filter(paxlovidlong != 1) %>%
+  count(molnupiravirshort)
+  # nrow()
+  
+
+
+ip.id %>% 
+  left_join(ip.paxlovid) %>% 
+  filter(is.na(daystillpaxlovid) | !(daystillpaxlovid > 4)) %>%
+  mutate(paxlovid = ifelse(daystillpaxlovid <= 4, 1, 0)) %>%
+  left_join(ip.molnupiravir) %>%
+  filter(is.na(daystillmolnupiravir) | !(daystillmolnupiravir > 4)) %>%
+  mutate(molnupiravir = ifelse(daystillmolnupiravir <= 4, 1, 0)) %>%
+  
+  # mutate(across(c("paxlovid", "molnupiravir"), ~replace_na(., 0))) %>%
+  count(paxlovid, molnupiravir)
+```
+
+
