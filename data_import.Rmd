@@ -11,7 +11,7 @@ library(dplyr)
 library(tidyr)
 library(readxl)
 library(lubridate)
-library(ggplot2)
+# library(ggplot2)
 ```
 
 # read 5th-wave data
@@ -31,13 +31,18 @@ read_xlsx_from_folder = function(filepath, match_by = NULL){
 ```
 
 # COVID drug use 
+# 25 May 2022: jan data is missing and we dont care, becos antiviral was dispensed only after 25th feb
 
 ```{r}
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/Antiviral (List of patients & drug use)/
-# 25 May 2022: jan data is missing and we dont care, becos antiviral was dispensed only after 25th feb
+# also antimicrobial folder
+
 antiviral = read_xlsx_from_folder("./data/5th Wave 202202/Antiviral/", ".xlsx")
+antiviral = antiviral %>%
+  # filter by only paxlovid and molnupiravir
+  filter(grepl("PAXLOVID|MOLNUPIRAVIR", `Drug Name`))
 # steroid administration route data
-# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Steroid/
+# directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Systemic Corticosteroid/
 steroid = read_xlsx_from_folder("./data/Wave 5/Steroid/", "_DRG.xlsx")
 # baricitinib 
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/Interferons & Antibodies/
@@ -61,12 +66,13 @@ antidiabetics = read_xlsx_from_folder("./data/Drugs/Endocrine - Diabetes/", "Dx"
 rheumatoids = read_xlsx_from_folder("./data/Drugs/Rheumatology/", "Dx")
 
 # no need filter by drug names
-broncodilators = read_xlsx_from_folder("./data/Wave 5/Respiratory - bronchodilators/", "Dx")
-cromoglycate = read_xlsx_from_folder("./data/Wave 5/Respiratory - Cromoglycate/", "Dx")
-corticosteroid = read_xlsx_from_folder("./data/Wave 5/Respiratory - Inhaled Corticosteroid/", "Dx")
+broncodilators = read_xlsx_from_folder("./data/Drugs/Respiratory - bronchodilators/", "Dx")
+cromoglycate = read_xlsx_from_folder("./data/Drugs/Respiratory - Cromoglycate/", "Dx")
+corticosteroid = read_xlsx_from_folder("./data/Drugs/Respiratory - Inhaled Corticosteroid/", "Dx")
 
 broncodilators = bind_rows(broncodilators, cromoglycate, corticosteroid)
-cancer = read_xlsx_from_folder("./data/Wave 5/Malignancy/", "Dx")
+
+cancer = read_xlsx_from_folder("./data/Drugs/Malignancy/", "Dx")
 
 ```
 
@@ -80,11 +86,12 @@ ip1 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202201/", "_I
 ip2 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202202/Dx/", "_IP.xlsx")
 ip3 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202203/Dx/", "_IP.xlsx")
 ip4 = read_xlsx_from_folder("./data/Wave 5/A&E and Hospitalization/202204/", "_IP.xlsx")
-ip = bind_rows(ip1, ip2, ip3, ip4)
-ip1 = ip2 = ip3 = ip4 = NULL
-# filter only 5th jan - 15th apr
+ip = bind_rows(ip1, ip2, ip3, ip4, ip5, ip6)
+ip1 = ip2 = ip3 = ip4 = ip5 = ip6 = NULL
+# filter only 22nd feb - 15th Apr
 ip = ip %>% 
-  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-01-05")
+  filter(ymd(`Admission Date (yyyy-mm-dd)`) >= "2022-02-22",
+         ymd(`Admission Date (yyyy-mm-dd)`) <= "2022-04-15")
 
 # directory as in onelook drive: ~/COVID Database/Patient-based Record/XLSX (Preferred)/Wave 5/
 # two separate death cause folders
@@ -125,11 +132,28 @@ organ_dys = organ_dys %>%
 
 ```{r}
 culture = read_xlsx_from_folder("./data/Wave 5/Culture/", ".xlsx")
-culture.id = select(culture, `Reference Key`, "Bacterial Culture and ST Within Hospital Stay - Ref. Date (yyyy-mm-dd HH:MM)") %>%
-  rename(culture.date = "Bacterial Culture and ST Within Hospital Stay - Ref. Date (yyyy-mm-dd HH:MM)") %>%
-  mutate(culture.date = as.Date(culture.date))
+culture.id = culture %>%
+  select(`Reference Key`, 
+                    culture.date = "Bacterial Culture and ST Within Hospital Stay - Ref. Date (yyyy-mm-dd HH:MM)",
+                    name = "Bacterial Culture and ST Within Hospital Stay - Organism Description (Corporate)",
+         specimen = "Bacterial Culture and ST Within Hospital Stay - Specimen") %>%
+  mutate(culture.date = as.Date(culture.date)) %>%
+  filter(
+    # blood only
+    grepl("Blood",specimen),
+    # remove irrelevant bacteria
+         !name %in% c("Staphylococcus, coagulase negative", "Staphylococcus epidermidis", "Diphtheroids" ,
+                      "Staphylococcus capitis", "Staphylococcus caprae", "Bacillus cereus group",
+                      "Bacillus cereus", "Clostridium perfringens", "Clostridium ramosum", "Paenibacillus species")) 
+  # select(-specimen, -name)
+
+culture.id %>% count(name) %>%
+  arrange(desc(n)) %>%
+  writexl::write_xlsx(., path = "culture.blood.positive.pp3.xlsx")
+
 ```
-# icu data
+
+# icu data (not used)
 
 ```{r}
 demo_ip = read_xlsx_from_folder("./data/5th Wave 202202/", "_demo_IP.xlsx")
@@ -141,5 +165,13 @@ icu = demo_ip %>%
 icu = aggregate(.~`HN Number`, icu, min)  %>%
   select(-`Admission Date (yyyy-mm-dd)`, -`Movement Time`)
 icu %>% count(`HN Number`) %>% filter(n > 1)
+```
+
+# antibiotics
+
+```{r}
+antibiotics = read_xlsx_from_folder("./data/Wave 5/Antimicrobial/", ".xlsx")
+antibiotics = antibiotics %>%
+  filter(`Dispensing Date (yyyy-mm-dd)`>=as.Date("2022-02-22"))
 ```
 

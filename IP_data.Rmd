@@ -17,6 +17,7 @@ library(ggfortify)
 library(dplyr)
 library(tidyr)
 source("./scripts/helper.R")
+
 ```
 
 
@@ -54,7 +55,7 @@ ip.id = ip.nodrug %>%
   ungroup() %>%
   filter(`Admission Date (yyyy-mm-dd)` >= "2022-02-22")
 
-writexl::write_xlsx(ip.id, "./ip.id.xlsx")
+# writexl::write_xlsx(ip.id, "./ip.id.xlsx")
 ```
 
 # ip.sexage
@@ -72,7 +73,7 @@ ip.sexage = ip.nodrug %>%
   slice(which.min(age)) %>%
   ungroup()
 
-writexl::write_xlsx(ip.sexage, path = "./ip.sexage.xlsx")
+# writexl::write_xlsx(ip.sexage, path = "./ip.sexage.xlsx")
 ```
 
 # comorbs, change to comorbidity package (ip.diag)
@@ -106,7 +107,7 @@ charlson = comorbidity::comorbidity(x = as.data.frame(ip.charlson),
                                    assign0 = F) 
 # charlson comorbs and cci by HN Number
 charlson = charlson %>%
-  left_join(select(charlson_diag, `HN Number`, id))
+  left_join(select(ip.charlson, `HN Number`, id))
 charlson = aggregate(charlson, by = list(charlson[, "HN Number"]), FUN = "max") %>%
   select(-Group.1)
 charlson = charlson %>% 
@@ -130,11 +131,11 @@ ip.diag = ip.diag %>%
   mutate(cci = ifelse(is.na(cci), "0", cci))
   # select(-diagnosis, -id, -code)
   
-unique(ip_diag$cci)
+unique(ip.diag$cci)
 
 # check if there is any NA, missing data
 ip.diag %>% filter_all((any_vars(is.na(.))))  
-writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
+# writexl::write_xlsx(ip.diag, "./ip.diag.xlsx")
 ```
 
 # 28d mortality and length of stay
@@ -168,11 +169,11 @@ ip.death = ip.id %>%
 
 # ip.death %>% count(`Reference Key`) %>% count(n)
 
-ip.death = ip.death.los %>%
+ip.death = ip.death %>%
   select(`Reference Key`, death28d, daystillevent, resp_death)
 
 # colnames(ip_death_los)
-writexl::write_xlsx(ip.death, './ip.death.xlsx')
+# writexl::write_xlsx(ip.death, './ip.death.xlsx')
 ```
 
 # SDI
@@ -188,10 +189,11 @@ ip.sdi = ip.nodrug %>%
   left_join(rename(sdi, district = Districtcode)) %>%
   select(-average_SDI_2)
 
-writexl::write_xlsx(ip.sdi, path = "./ip.sdi.xlsx")
+# writexl::write_xlsx(ip.sdi, path = "./ip.sdi.xlsx")
 ```
 
 # ip.culture, culture data
+# 3rd Aug 2022: up to here
 
 ```{r}
 ip.culture = ip.id %>%
@@ -205,6 +207,7 @@ ip.culture = ip.id %>%
   filter(daystillculture <= 21) %>%
   mutate(culture = 1) %>%
   select(`Reference Key`, culture)
+
 ```
 
 

@@ -7,14 +7,16 @@ title: "R Notebook"
 
 ```{r}
 library(forestplot)
+library(lubridate)
+library(hablar)
 library(ggfortify)
 library(fmsb)
 library(here)
 library(tidyr)
 library(dplyr)
 select = dplyr::select
-source("./covid_antiviral/scripts/iptwhelper.R")
-source("./covid_antiviral/scripts/helper.R")
+source("./scripts/iptwhelper.R")
+source("./scripts/helper.R")
 ```
 
 # propensity and IPTW by weightit
@@ -56,15 +58,15 @@ x_factors_weighting = x_factors
 # trt_factors = c("paxlovid","molnupiravir")
 
 # # check if there is any NA, missing data
-# ip.iptw %>% filter(across(c("Sex"), is.na))
+ip.iptw %>% filter(if_any(everything(), is.na))
 
 ip.iptw = ip.iptw %>%
   mutate(across(c(x_factors), ~replace_na(., 0)),
          across(c(x_factors) & !"age", factor)) 
 
 # check if there is any NA, missing data
-select(ip.iptw.p.mortality, death28d, resp_death, daystillevent) %>% 
-  filter(across(c("death28d", "resp_death", "daystillevent"), is.na))
+# select(ip.iptw.p.mortality, death28d, resp_death, daystillevent) %>% 
+#   filter(if_any(c("death28d", "resp_death", "daystillevent"), is.na))
 ```
 
 # 2 cohorts
@@ -84,6 +86,7 @@ weights.p = iptw_tableone(df = ip.iptw.p,
               treatment = "paxlovid",
               x_factors = x_factors,
               x_factors_tableone = x_factors_tableone,
+              output = F,
               path_of_unweighted_tableone = "./p.unweighted.tableone.xlsx",
               path_of_weighted_tableone = "./p.weighted.tableone.xlsx")
 
@@ -109,6 +112,7 @@ weights.m = iptw_tableone(df = ip.iptw.m,
               treatment = "molnupiravir",
               x_factors = x_factors,
               x_factors_tableone = x_factors_tableone,
+              output = F,
               path_of_unweighted_tableone = "./m.unweighted.tableone.xlsx",
               path_of_weighted_tableone = "./m.weighted.tableone.xlsx")
 
@@ -202,7 +206,7 @@ ip.iptw.m.organ_dys.orig = ip.iptw.m %>%
          composite = ifelse(composite > 21, NA, composite)) %>%
   ungroup()
 
-writexl::write_xlsx(ip.iptw.p.organ_dys.orig, path = "./ip.iptw.p.organ_dys.culture_positive_incl.xlsx")
+# writexl::write_xlsx(ip.iptw.p.organ_dys.orig, path = "./ip.iptw.p.organ_dys.culture_positive_incl.xlsx")
 ```
 
 

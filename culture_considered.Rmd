@@ -3,6 +3,9 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+# treatment desginated as paxlovid, molnupiravir and no treatment
+# culture positive
+
 ```{r}
 library(lubridate)
 library(hablar)
@@ -13,74 +16,208 @@ library(readxl)
 library(lubridate)
 library(ggplot2)
 library(fmsb)
+library(WeightIt)
+source("./scripts/iptwhelper.R")
 ```
 
 
 # ip.iptw.culture
 
 ```{r}
-ip.iptw.c = ip.iptw %>%
-  # remove all taken both antiviral?
-  filter(!(paxlovidlong == 1 & molnupiravirlong == 1)) %>%
-  # remove all taken paxlovid only after 4d since admission
-  filter(!(paxlovidlong == 1 & paxlovidshort != 1)) %>%
-  mutate(antiviral = ifelse(!is.na(paxlovidshort), 1, 0)) %>%
-  # remove all taken molnupiravir only after 4d since admission
-  filter(!(molnupiravirlong == 1 & molnupiravirshort != 1))%>%
-  mutate(antiviral = ifelse(!is.na(molnupiravirshort), 1, antiviral))%>%
-  select(-contains("long"), -contains("short"), -contains("days")) %>%
+ip.iptw = ip.id %>%
+  left_join(ip.sexage) %>%
+  filter(!is.na(Sex) | !is.na(age)) %>%
+  left_join(ip.sdi) %>%
+  filter(!is.na(sdi_q)) %>%
+  left_join(ip.culture) %>%
+  left_join(ip.diag) %>%
+  left_join(ip.drug.all) %>%
+
+  mutate(across(antiplatelets:alcohol_abuse, ~replace_na(., 0)),
+         across(antiplatelets:alcohol_abuse, factor)) %>%
   # # culture only
-  filter(culture == 1)
+  filter(culture == 1) 
 
-# iptw
-weights.c = iptw_tableone(df = ip.iptw.c, 
-              treatment = "antiviral",
-              x_factors = x_factors,
-              x_factors_tableone = x_factors_tableone,
-              path_of_unweighted_tableone = "./culture_results/c.unweighted.tableone.xlsx",
-              path_of_weighted_tableone = "./culture_results/c.weighted.tableone.xlsx")
+nrow(ip.iptw)
 
-ip.iptw.c = ip.iptw.c %>%
-  mutate(weight = weights.c$weights)
+ip.iptw = ip.iptw %>% 
+  # left join paxlovid
+  left_join(ip.paxlovid) %>% 
+  # impute paxlovid without 4d rule
+  # impute paxlovid with 4d rule
+  mutate(paxlovidlong = ifelse(!is.na(daystillpaxlovid), 1, 0),
+         paxlovidshort = ifelse(daystillpaxlovid <= 4, 1, 0)) %>%
+  # left join molnupiravir
+  left_join(ip.molnupiravir) %>%
+  # impute molnupiravir without 4d rule
+  # impute molnupiravir with 4d rule
+  mutate(molnupiravirlong = ifelse(!is.na(daystillmolnupiravir), 1, 0),
+         molnupiravirshort = ifelse(daystillmolnupiravir <= 4, 1, 0)) %>%
+  filter(!(molnupiravirlong == 1 & paxlovidlong == 1)) 
+  # left join molnupiravir
+  # left_join(ip.remdesivir) %>%
+  # # impute molnupiravir without 4d rule
+  # # impute molnupiravir with 4d rule
+  # mutate(remdesivirlong = ifelse(!is.na(daystillremdesivir), 1, 0),
+  #        remdesivirshort = ifelse(daystillremdesivir <= 4, 1, 0)) %>%
+  # filter(!(remdesivirlong == 1 & remdesivirshort == 1))
 
-writexl::write_xlsx(ip.iptw.c, "./culture_results/ip.iptw.c.nooutcome.xlsx")
+nrow(ip.iptw)
 
-# ---------
-# molnupiravir
+```
 
-ip.iptw.nc = ip.iptw %>%
-  # remove all taken both antiviral?
-  filter(!(paxlovidlong == 1 & molnupiravirlong == 1)) %>%
+
+```{r}
+# subset factors
+x_factors_tableone = colnames(ip.iptw)
+x_factors_tableone = x_factors_tableone[!x_factors_tableone %in% c("Reference Key","HN Number",
+                                        "Admission Date (yyyy-mm-dd)","Discharge Date (yyyy-mm-dd)",
+                                        "age_grp5", "dexamethasone", "baricitinib", "district", "culture",
+                                        # single level factors
+                                        "parkinsons", "depression", "arthritis", "obesity", "alcohol_abuse", "brono", "cancer")]
+x_factors_tableone = x_factors_tableone[!grepl("paxlovid|molnupiravir", x_factors_tableone)]
+x_factors = x_factors_tableone[x_factors_tableone != "age"]
+# x_factors_weighting = x_factors
+
+ip.iptw.c = ip.iptw %>%
+  # remove all taken any two antiviral
+  filter(!(paxlovidlong + molnupiravirlong > 1)) %>%
   # remove all taken paxlovid only after 4d since admission
   filter(!(paxlovidlong == 1 & paxlovidshort != 1)) %>%
-  mutate(antiviral = ifelse(!is.na(paxlovidshort), 1, 0)) %>%
+  mutate(antiviral = ifelse(!is.na(paxlovidshort), "paxlovid", "none")) %>%
   # remove all taken molnupiravir only after 4d since admission
   filter(!(molnupiravirlong == 1 & molnupiravirshort != 1))%>%
-  mutate(antiviral = ifelse(!is.na(molnupiravirshort), 1, antiviral))%>%
+  mutate(antiviral = ifelse(!is.na(molnupiravirshort), "molnupiravir", antiviral))%>%
+  # # remove all taken remdesivir only after 4d since admission
+  # filter(!(remdesivirlong == 1 & remdesivirshort != 1))%>%
+  # mutate(antiviral = ifelse(!is.na(remdesivirshort), "remdesivir", antiviral))%>%
   select(-contains("long"), -contains("short"), -contains("days")) %>%
-  # culture only
-  filter(culture != 1)
+  mutate(
+    # across("antiplatelets":"alcohol_abuse", ~replace_na(., 0)),
+         across(x_factors_tableone[x_factors_tableone != "age"], factor))
 
-# iptw 
+nrow(ip.iptw.c)
 
-weights.nc = iptw_tableone(df = ip.iptw.nc, 
+
+
+# writexl::write_xlsx(ip.iptw.c %>% 
+#                       select(`Reference Key`, `HN Number`, `Admission Date (yyyy-mm-dd)`, `Discharge Date (yyyy-mm-dd)`) %>%
+#                       left_join(ip.nodrug %>% select(`HN Number`, `Discharge Status`)),
+#                     path = "./culture_results/ip.id.xlsx")
+
+ip.iptw.cp = ip.iptw.c %>%
+  filter(antiviral != "molnupiravir") %>%
+  mutate(antiviral = ifelse(antiviral == "none", 0, 1))
+
+ip.iptw.cm = ip.iptw.c %>%
+  filter(antiviral != "paxlovid")%>%
+  mutate(antiviral = ifelse(antiviral == "none", 0, 1))
+
+# ip.iptw.cr = ip.iptw.c %>%
+#   filter(antiviral == "remdesivir")%>%
+#   mutate(antiviral = ifelse(antiviral == "none", 0, 1))
+
+nrow(ip.iptw.cp)
+
+library(tableone)
+tab1_unweighted = CreateTableOne(vars = x_factors_tableone, data = ip.iptw.cp, strata = "antiviral")
+print(tab1_unweighted, smd = T)
+
+tab1_unweighted = CreateTableOne(vars = x_factors_tableone, data = ip.iptw.cm, strata = "antiviral")
+print(tab1_unweighted, smd = T)
+
+tab1_unweighted_Mat <- print(tab1_unweighted, quote = FALSE, 
+                                 noSpaces = TRUE, printToggle = FALSE, smd = T)
+tab1_unweighted_Mat = as.data.frame(cbind(" " = rownames(tab1_unweighted_Mat),tab1_unweighted_Mat))
+## Save to a xlsx
+writexl::write_xlsx(tab1_unweighted_Mat, path = "./culture_results/ip.cm.tableone.xlsx")
+
+writexl::write_xlsx(ip.iptw.cm, "./culture_results/ip.cm.xlsx")
+
+unique(ip.iptw.c$antiviral)
+```
+
+# the following is not used as matching is chosen in place of weighting
+
+```{r}
+# iptw
+function_call = paste0("weights.cp <- weightit(",treatment," ~ ",paste(x_factors, collapse = "+"), 
+                          ", data = ip.iptw.cp, method = \"gbm\", focal = \"none\",
+                estimand = \"ATT\")")
+eval(parse(text = function_call))
+# summary(weights.cp)
+# library(cobalt)
+# bal.tab(weights.cp, un = T)
+
+weights.cp = iptw_tableone(df = ip.iptw.cp, 
               treatment = "antiviral",
               x_factors = x_factors,
               x_factors_tableone = x_factors_tableone,
-              path_of_unweighted_tableone = "./nc.unweighted.tableone.xlsx",
-              path_of_weighted_tableone = "./nc.weighted.tableone.xlsx")
+              output = T,
+              path_of_unweighted_tableone = "./culture_results/cp.unweighted.tableone.xlsx",
+              path_of_weighted_tableone = "./culture_results/cp.weighted.tableone.cbps.xlsx")
 
-ip.iptw.nc = ip.iptw.nc %>%
-  mutate(weight = weights.nc$weights)
+ip.iptw.cp = ip.iptw.cp %>%
+  mutate(weight = weights.cp$weights)
+
+CreateTableOne(vars = x_factors_tableone,
+               strata = "antiviral",
+               ip.iptw.c)
+
+
+weights.cm = iptw_tableone(df = ip.iptw.cm, 
+              treatment = "antiviral",
+              x_factors = x_factors,
+              x_factors_tableone = x_factors_tableone,
+              output = T,
+              path_of_unweighted_tableone = "./culture_results/cm.unweighted.tableone.xlsx",
+              path_of_weighted_tableone = "./culture_results/cm.weighted.tableone.gbm.xlsx")
+
+ip.iptw.cm = ip.iptw.cm %>%
+  mutate(weight = weights.cm$weights)
+
+writexl::write_xlsx(ip.iptw.cm, "./culture_results/ip.iptw.cm.xlsx")
+# ---------
+# non-culture-positive
+
+# ip.iptw.nc = ip.iptw %>%
+#   # remove all taken both antiviral?
+#   filter(!(paxlovidlong == 1 & molnupiravirlong == 1)) %>%
+#   # remove all taken paxlovid only after 4d since admission
+#   filter(!(paxlovidlong == 1 & paxlovidshort != 1)) %>%
+#   mutate(antiviral = ifelse(!is.na(paxlovidshort), 1, 0)) %>%
+#   # remove all taken molnupiravir only after 4d since admission
+#   filter(!(molnupiravirlong == 1 & molnupiravirshort != 1))%>%
+#   mutate(antiviral = ifelse(!is.na(molnupiravirshort), 1, antiviral))%>%
+#   select(-contains("long"), -contains("short"), -contains("days")) %>%
+#   # culture non-positive only
+#   filter(is.na(culture))
+# 
+# # iptw 
+# 
+# weights.nc = iptw_tableone(df = ip.iptw.nc, 
+#               treatment = "antiviral",
+#               x_factors = x_factors,
+#               x_factors_tableone = x_factors_tableone,
+#               output = T,
+#               path_of_unweighted_tableone = "./culture_results/nc.unweighted.tableone.xlsx",
+#               path_of_weighted_tableone = "./culture_results/nc.weighted.tableone.xlsx")
+# 
+# ip.iptw.nc = ip.iptw.nc %>%
+#   mutate(weight = weights.nc$weights)
 ```
 
 # mortality
 
 ```{r}
-ip.iptw.c.mortality = ip.iptw.c %>%
+ip.iptw.cp.mortality = ip.iptw.cp %>%
   left_join(ip.death)
 
-ip.iptw.nc.mortality = ip.iptw.nc %>%
+ip.iptw.cm.mortality %>% count(antiviral, death28d)
+
+writexl::write_xlsx(ip.iptw.cm.mortality, path = "./culture_results/ip.cm.mortality.xlsx")
+
+ip.iptw.cm.mortality = ip.iptw.cm %>%
   left_join(ip.death)
 ```
 
@@ -88,7 +225,7 @@ ip.iptw.nc.mortality = ip.iptw.nc %>%
 # organ dysfunction df (culture)
 
 ```{r}
-ip.iptw.c.organ_dys = ip.iptw.c %>%
+ip.iptw.cp.organ_dys = ip.iptw.cp %>% 
     left_join(organ_dys) %>%
   # left-join dexamethasone 
     left_join(dexamethasone_shortlist) %>%
@@ -121,7 +258,7 @@ ip.iptw.c.organ_dys = ip.iptw.c %>%
          composite = ifelse(composite > 21, NA, composite)) %>%
   ungroup()
 
-ip.iptw.nc.organ_dys = ip.iptw.nc %>%
+ip.iptw.cm.organ_dys = ip.iptw.cm %>%
     left_join(organ_dys) %>%
   # left-join dexamethasone 
     left_join(dexamethasone_shortlist) %>%
@@ -152,24 +289,34 @@ ip.iptw.nc.organ_dys = ip.iptw.nc %>%
          composite = ifelse(composite > 21, NA, composite)) %>%
   ungroup()
 
-# writexl::write_xlsx(ip.iptw.p.organ_dys.orig, path = "./ip.iptw.p.organ_dys.culture_positive_incl.xlsx")
+writexl::write_xlsx(ip.iptw.cp.organ_dys, path = "./culture_results/ip.cp.organ_dys.xlsx")
+
+head(ip.iptw.cp.organ_dys)
+
+colnames(ip.iptw.cp.organ_dys)
+
+CreateTableOne(vars = c("Circulatory.shock":"Acute.liver.impairment"), data = ip.iptw.cp.organ_dys %>%
+                 mutate(across("Circulatory.shock":"Acute.liver.impairment", ~ifelse(!is.na(.), 1, 0))))
 ```
 
 # count data
 
 ```{r}
-# events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
-                       # "Coagulopathy","Acute.liver.impairment","composite")
-events = c("death28d", "resp_death")
+events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
+"Coagulopathy","Acute.liver.impairment","composite")
+# events = c("death28d", "resp_death")
+
 tab.ip.culture.organ_dys = CreateTableOne(vars = events,
-                           data = ip.iptw.c.mortality %>%
+                           data = ip.iptw.cm.organ_dys %>%
                          mutate(
-                           ## only for organ dysfunction
-                           # across(c(events), ~ifelse(!is.na(.), 1, 0)),
+                           # only for organ dysfunction
+                           across(c(events), ~ifelse(!is.na(.), 1, 0)),
                        across(c(events,"antiviral"), factor)),
                            strata = c("antiviral"), test = T)
 tab.ip.culture.organ_dys = tableone_to_xlsx(tab.ip.culture.organ_dys)
-writexl::write_xlsx(tab.ip.culture.organ_dys, path = "./culture_results/tab.ip.culture.mortality.c.xlsx")
+
+tab.ip.culture.organ_dys
+writexl::write_xlsx(tab.ip.culture.organ_dys, path = "./culture_results/tab1.ip.culture.mortality.cp.xlsx")
 ```
 
 

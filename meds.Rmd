@@ -81,7 +81,7 @@ ip.drug.big.second = bind_rows(mutate(broncodilators, brono = 1),
 ip.drug.big.imputed = bind_rows(ip.drug.big.imputed, 
                                 ip.drug.big.second)
 
-writexl::write_xlsx(ip.drug.big.imputed, path = "./ip.drug.imputed.xlsx")
+# writexl::write_xlsx(ip.drug.big.imputed, path = "./ip.drug.imputed.xlsx")
 ```
 
 # ip.dexamethasone
@@ -143,8 +143,8 @@ baricitinib_shortlist = baricitinib_shortlist %>%
 #   select(`HN Number`, daystillbari)
 # baricitinib_shortlist = aggregate(daystillbari~`Reference Key`, baricitinib_shortlist, min)
 
-writexl::write_xlsx(dexamethasone_shortlist, path = "./ip.dexamethasone.xlsx")
-writexl::write_xlsx(baricitinib_shortlist, path = "./ip.baricitinib.xlsx")
+# writexl::write_xlsx(dexamethasone_shortlist, path = "./ip.dexamethasone.xlsx")
+# writexl::write_xlsx(baricitinib_shortlist, path = "./ip.baricitinib.xlsx")
 ```
 
 # medication status of IP epsiodes with IP data only (ip.drug)
@@ -197,7 +197,7 @@ ip.paxlovid = ip.paxlovid %>%
 
 ip.paxlovid = ip.paxlovid %>% distinct()
 
-writexl::write_xlsx(ip.paxlovid, path = "./ip.paxlovid.xlsx")
+# writexl::write_xlsx(ip.paxlovid, path = "./ip.paxlovid.xlsx")
 ```
 
 # ip.molnupiravir
@@ -233,8 +233,55 @@ ip.molnupiravir = ip.molnupiravir %>%
 
 ip.molnupiravir = ip.molnupiravir %>% distinct()
 
-writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.xlsx")
+# writexl::write_xlsx(ip.molnupiravir, path = "./ip.molnupiravir.xlsx")
 ```
+
+# ip.remdesivir
+
+```{r}
+# "REMDESIVIR" unique(antibiotics$`Drug Name`)
+unique(ip.drug$`Drug Name`)[grepl("REMDESIVIR", unique(ip.drug$`Drug Name`))]
+antibiotics$route
+antibiotics %>% filter(`Drug Name` == "REMDESIVIR") %>% select(Route) %>% unique()
+
+med_dict_remdesivir = tribble(
+  ~drug.cat, ~drug.name,
+  "remdesivir", "REMDESIVIR"
+)
+
+# refer to data_import.Rmd for antiviral obj.
+pres_date = antibiotics %>% 
+  select(`Reference Key`, `Dispensing Date (yyyy-mm-dd)`, `Drug Name`)
+
+ip.remdesivir = ip.drug %>%
+  impute_meds_w_dict(., as.data.frame(med_dict_remdesivir)) %>%
+  filter(remdesivir == 1) %>%
+  left_join(pres_date)  %>% 
+  # by reference key,
+  group_by(`Reference Key`) %>%
+  # ... get earliest admission
+  slice(which.min(ymd(`Admission Date (yyyy-mm-dd)`))) %>%
+  # ... get earliest dispension of antiviral
+  slice(which.min(ymd(`Dispensing Date (yyyy-mm-dd)`))) %>%
+  ungroup()
+
+
+
+ip.remdesivir = ip.remdesivir %>%
+  mutate(daystillremdesivir = as.Date(`Dispensing Date (yyyy-mm-dd)`) - 
+           as.Date(`Admission Date (yyyy-mm-dd)`)) %>%
+  filter(daystillremdesivir >= 0,
+         as.Date(`Dispensing Date (yyyy-mm-dd)`) >= as.Date(`Admission Date (yyyy-mm-dd)`))
+
+ip.remdesivir = ip.remdesivir %>%
+  # filter(daystillmolnupiravir <= 4)%>%
+  select(`Reference Key`, daystillremdesivir)
+
+ip.remdesivir = ip.remdesivir %>% distinct()
+
+nrow(ip.remdesivir)
+```
+
 
 # combine all medication status
 
@@ -248,6 +295,6 @@ ip.drug.all = ip.drug.big.imputed %>%
 
 ip.drug.all = aggregate(ip.drug.all, by = list(ip.drug.all[, "Reference Key"]), FUN = "max") %>%
   select(-Group.1)
-writexl::write_xlsx(ip.drug.all, path = "./ip.drug.all.xlsx")
+# writexl::write_xlsx(ip.drug.all, path = "./ip.drug.all.xlsx")
 ```
 

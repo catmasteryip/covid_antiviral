@@ -10,14 +10,16 @@ iptw_tableone = function(df,
                          treatment, 
                          x_factors, 
                          x_factors_tableone,
-                         path_of_unweighted_tableone,
-                         path_of_weighted_tableone){
+                         output = T,
+                         path_of_unweighted_tableone = NULL,
+                         path_of_weighted_tableone = NULL){
   #' IPTW and table one generation (unweighted and weighted), save to 
   #'
   #' @param df Dataframe. A dataframe that contains the treatment and x_factors
   #' @param treatment string. A string that specifies the treatment column
   #' @param x_factors c(string). A vector of strings that specfiy the covariate columns passed to IPTW
   #' @param x_factors_tableone c(string). A vector of strings that specify the variable columns shown on table one
+  #' @param output (logical). A flag of whether needing tableone outputs
   #' @param path_of_unweighted_tableone string. 
   # A string that specifies the path to save unweighted table one in .xlsx
   #' @param path_of_weighted_tableone string. 
@@ -25,36 +27,48 @@ iptw_tableone = function(df,
   #' @return Weightit object/output that contains the weights and data, and other parameters
   
   # weightit 
-  function_call<-paste0("weight <- weightit(",treatment," ~ ",paste(x_factors, collapse = "+"), 
-                        ", data = df, method = \"ps\", 
+  if(length(unique(df %>% pull(c(treatment)))) > 2){
+    function_call<-paste0("weight <- weightit(",treatment," ~ ",paste(x_factors, collapse = "+"), 
+                          ", data = df, method = \"ps\", focal = \"none\",
                 estimand = \"ATT\")"
-  )
+    )
+  }else{
+    function_call<-paste0("weight <- weightit(",treatment," ~ ",paste(x_factors, collapse = "+"), 
+                          ", data = df, method = \"cbps\", 
+                estimand = \"ATT\")"
+    )
+  }
+  
   eval(parse(text = function_call))
-  
-  # unweighted table one
-  tab1_unweighted = CreateTableOne(vars = x_factors_tableone,
-                                   data = df, 
-                                   strata = treatment, 
-                                   test = F)
-  
-  tab1_unweighted_Mat <- print(tab1_unweighted, quote = FALSE, 
+  # browser()
+  if(output){
+    # unweighted table one
+    tab1_unweighted = CreateTableOne(vars = x_factors_tableone,
+                                     data = df, 
+                                     strata = treatment, 
+                                     test = F)
+    
+    tab1_unweighted_Mat <- print(tab1_unweighted, quote = FALSE, 
+                                 noSpaces = TRUE, printToggle = FALSE, smd = T)
+    tab1_unweighted_Mat = as.data.frame(cbind(" " = rownames(tab1_unweighted_Mat),tab1_unweighted_Mat))
+    ## Save to a xlsx
+    writexl::write_xlsx(tab1_unweighted_Mat, path = path_of_unweighted_tableone)
+    
+    # IPTW-ed table one
+    clus <- svydesign(ids = ~ 1, 
+                      weights = ~ weight$weights,
+                      data = select(df, c(treatment, x_factors_tableone)))
+    tab1_weighted = svyCreateTableOne(vars = x_factors_tableone,
+                                      data = clus, 
+                                      strata = treatment, 
+                                      test = F)
+    tab1_weighted_Mat <- print(tab1_weighted, quote = FALSE, 
                                noSpaces = TRUE, printToggle = FALSE, smd = T)
-  tab1_unweighted_Mat = as.data.frame(cbind(" " = rownames(tab1_unweighted_Mat),tab1_unweighted_Mat))
-  ## Save to a xlsx
-  writexl::write_xlsx(tab1_unweighted_Mat, path = path_of_unweighted_tableone)
+    tab1_weighted_Mat = as.data.frame(cbind(" " = rownames(tab1_weighted_Mat),tab1_weighted_Mat))
+    ## Save to a xlsx
+    writexl::write_xlsx(tab1_weighted_Mat, path = path_of_weighted_tableone)
+  }
   
-  # IPTW-ed table one
-  clus <- svydesign(ids = ~ 1, 
-                    weights = ~ weight$weights,
-                    data = select(df, c(treatment, x_factors_tableone)))
-  tab1_weighted = svyCreateTableOne(data = clus, 
-                                    strata = treatment, 
-                                    test = F)
-  tab1_weighted_Mat <- print(tab1_weighted, quote = FALSE, 
-                             noSpaces = TRUE, printToggle = FALSE, smd = T)
-  tab1_weighted_Mat = as.data.frame(cbind(" " = rownames(tab1_weighted_Mat),tab1_weighted_Mat))
-  ## Save to a xlsx
-  writexl::write_xlsx(tab1_weighted_Mat, path = path_of_weighted_tableone)
   
   return(weight)
 }

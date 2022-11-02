@@ -7,14 +7,14 @@ output: html_notebook
 
 ```{r}
 # params
-x_factors_hr = c("overall", "Sex","age_grp5","sdi_q","diabetes")
-
+# x_factors_hr = c("overall", "Sex","age_grp5","sdi_q","diabetes")
+x_factors_hr = c("overall")
 # treatment 
 treatment = "antiviral" # or
-# treatment = "paxlovid" # or
+# treatment = "antivi" 
 # treatment = "molnupiravir"
-df = ip.iptw.c.mortality
-path = "./culture_results/hr/hr.mortality.c.xlsx"
+df = ip.iptw.cp.mortality
+path = "./culture_results/hr/hr.mortality.cp.xlsx"
 # events = c("Circulatory.shock","Respiratory.failure","Acute.kidney.injury",
 #                        "Coagulopathy","Acute.liver.impairment","composite")
 # or 
@@ -23,6 +23,10 @@ events = c("death28d", "resp_death")
 # or
 outcome = "mortality"
 # _________
+```
+
+
+```{r}
 hr.organ_dys = c()
 for(eventtype in events){
   print(eventtype)
@@ -71,6 +75,7 @@ hr.organ_dys = hr.organ_dys %>%
 # event/risk table of organ dysfunction/mortality
 
 ```{r}
+remove_brackets_helper = function(x){gsub("\\s*\\([^\\)]+\\)", "", x)}
 # params
 # --------
 # x_factors_hr = c("Sex","age_grp5","sdi_q","diabetes")
@@ -87,6 +92,10 @@ hr.organ_dys = hr.organ_dys %>%
 # --------
 x_factors_hr_orig = x_factors_hr
 x_factors_hr = x_factors_hr[x_factors_hr != "overall"]
+if(length(x_factors_hr) == 0){
+  # placeholder
+  x_factors_hr = "Sex"
+}
 tab1.organ_dys.numerics = c()
 for(eventtype in events){
   print(eventtype)
@@ -203,23 +212,26 @@ for(eventtype in events){
       # weighting
       mutate(!!(days_tillevent) := as.numeric(get(days_tillevent)),
              !!(days_tillevent) := ifelse(is.na(get(days_tillevent)), 21, get(days_tillevent)),
-             !!(days_tillevent) := get(days_tillevent) * weight,
-             !!(treatment) := as.factor(get(treatment))) %>%
+             !!(days_tillevent) := get(days_tillevent) * weight) %>%
       # calculate weighted PT by segment and treatment
       group_by_at(group_var) %>%
       summarise(person_time = sum(get(days_tillevent))) %>%
       ungroup()
-    
-    incidence.factor = cases.factor %>% 
-      mutate(across(1:2, factor)) %>%
-      left_join(pt.factor) 
     # browser()
+    # if(eventtype == "diabetes"){
+    #   browser()
+    # }
+
+    incidence.factor = cases.factor %>% 
+      left_join(pt.factor) 
+      
+
     if(x == "overall"){
       incidence.factor = incidence.factor %>% 
         mutate(segment = "overall")
       
     }else{
-      incidence.factor = incidence.factor %>% 
+      incidence.factor = incidence.factor %>%
         mutate(segment = paste0(x, !!!syms(x)))
     }
     incidence.factor = incidence.factor %>%
@@ -272,6 +284,7 @@ ird.df = ird.df %>%
 
 ```{r}
 hr.table = tab1.organ_dys %>% 
+  filter(variables == "n") %>%
   bind_cols(select(ird.df, trt0.ir, trt1.ir, estimate:conf.high) %>%
     rename_with(.fn = ~paste0("ird.", .), .cols=estimate:conf.high)) %>%
   bind_cols(select(hr.organ_dys, estimate:conf.high)%>%
